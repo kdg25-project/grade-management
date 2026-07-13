@@ -1,0 +1,4 @@
+interface:
+  display_name: "成績管理ドメイン"
+  short_description: "確定済みの成績・年度・CSV業務ルールを適用する"
+  default_prompt: "Use $grade-management-domain to implement this grade-management requirement with the confirmed domain rules."

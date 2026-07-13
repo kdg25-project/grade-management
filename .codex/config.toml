@@ -1,0 +1,28 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+[features]
+multi_agent = true
+
+[agents]
+max_threads = 4
+max_depth = 1
+
+[agents.scout]
+description = "コードベースを読み取り専用で調査し、構造・影響範囲・根拠を報告する"
+config_file = "agents/scout.toml"
+nickname_candidates = ["探索役", "調査役", "Scout"]
+
+[agents.coder]
+description = "指定された範囲を実装し、関連するテストと検証を実行する"
+config_file = "agents/coder.toml"
+nickname_candidates = ["実装役", "開発役", "Coder"]
+
+[agents.reviewer]
+description = "変更を独立した視点でレビューし、問題点と承認可否を報告する"
+config_file = "agents/reviewer.toml"
+nickname_candidates = ["レビュー役", "検証役", "Reviewer"]
+
+[agents.docs-researcher]
+description = "公式一次資料を読み取り専用で調査し、URL付きで根拠を報告する"
+config_file = "agents/docs-researcher.toml"
+nickname_candidates = ["資料調査役", "公式文書役", "Docs"]

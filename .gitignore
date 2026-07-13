@@ -1,0 +1,25 @@
+.omc
+.claude
+
+# Dependencies
+node_modules/
+.bun-cache/
+.tmp/
+
+# Build output
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs and editor files
+*.log
+.DS_Store
+.idea/
+.vscode/

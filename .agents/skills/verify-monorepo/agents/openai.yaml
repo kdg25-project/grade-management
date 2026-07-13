@@ -1,0 +1,4 @@
+interface:
+  display_name: "Monorepo検証"
+  short_description: "Bun・Next・Hono・DB・Docker構成を検証する"
+  default_prompt: "Use $verify-monorepo to verify the current monorepo changes and report actionable failures."
