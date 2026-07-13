@@ -1,10 +1,8 @@
 "use client";
 
-import type { AppType } from "@grade-management/api/app";
-import { hc } from "hono/client";
 import { useEffect, useState } from "react";
 
-const client = hc<AppType>("/");
+import { apiClient } from "@/lib/hc";
 
 export function ApiHealth() {
   const [status, setStatus] = useState("接続確認中");
@@ -13,7 +11,7 @@ export function ApiHealth() {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const response = await client.api.health.$get();
+        const response = await apiClient.api.health.$get();
         if (!response.ok) throw new Error("API health check failed");
 
         const health = await response.json();

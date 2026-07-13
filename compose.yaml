@@ -16,6 +16,18 @@ services:
       retries: 10
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migration
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-grade_management}:${POSTGRES_PASSWORD:-grade_management}@postgres:5432/${POSTGRES_DB:-grade_management}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: .
@@ -23,9 +35,12 @@ services:
     environment:
       API_PORT: 3001
       DATABASE_URL: postgresql://${POSTGRES_USER:-grade_management}:${POSTGRES_PASSWORD:-grade_management}@postgres:5432/${POSTGRES_DB:-grade_management}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:8080}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3000,http://localhost:8080}
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:3001/api/health');if(!r.ok)process.exit(1)"]
       interval: 5s

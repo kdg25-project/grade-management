@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./app": "./src/app.ts"
+    "./app": "./src/app.ts",
+    "./auth": "./src/auth.ts"
   },
   "scripts": {
     "dev": "bun --hot src/index.ts",
@@ -15,6 +16,7 @@
   },
   "dependencies": {
     "@grade-management/db": "workspace:*",
+    "better-auth": "1.6.23",
     "hono": "4.12.8"
   },
   "devDependencies": {

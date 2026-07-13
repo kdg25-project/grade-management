@@ -15,10 +15,11 @@ Bun workspacesで管理するNext.js + Honoのモノレポです。外部から�
 cp .env.example .env
 bun install
 docker compose up -d postgres
+bun run db:migrate
 bun run dev
 ```
 
-PostgreSQLは既定でホストの `localhost:5432` に公開され、`.env` の `DATABASE_URL` から接続できます。Webは `http://localhost:3000`、APIは `http://localhost:3001/api/health` で起動します。Nginxを含む全サービスを使う場合は `docker compose up --build` を実行し、`http://localhost:8080` を開いてください。ホスト側の5432番ポートを使用中の場合は、`.env` の `POSTGRES_PORT` と `DATABASE_URL` のポートを同じ値へ変更してください。
+PostgreSQLは既定でホストの `localhost:5432` に公開され、`.env` の `DATABASE_URL` から接続できます。ホスト開発ではPostgreSQL起動後にmigrationを適用してください。Webは `http://localhost:3000`、APIは `http://localhost:3001/api/health` で起動します。Nginxを含む全サービスを使う場合は `docker compose up --build` を実行し、`http://localhost:8080` を開いてください。Composeでは`migrate`サービスがPostgreSQLの準備完了後にmigrationを適用し、成功した場合だけAPIを起動します。ホスト側の5432番ポートを使用中の場合は、`.env` の `POSTGRES_PORT` と `DATABASE_URL` のポートを同じ値へ変更してください。
 
 ## コマンド
 
@@ -31,3 +32,9 @@ bun run db:migrate
 ```
 
 依存関係の再現性を保つため、パッケージのバージョンは固定し、コンテナ内では `bun install --frozen-lockfile` を使用します。
+
+## 認証
+
+Better Authのメールアドレス・パスワード認証はHonoの`/api/auth/*`で提供します。自己サインアップは無効です。`.env`の`BETTER_AUTH_SECRET`は、開発を開始する前に32文字以上のランダムな値へ必ず置き換えてください。
+
+現段階では初期管理者の払い出し、パスワードリセットメールの配送、単一セッション制限は未実装です。管理者または講師アカウントを利用するには、別途安全な初期登録手段を実装する必要があります。

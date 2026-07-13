@@ -7,6 +7,12 @@ COPY apps/web/package.json apps/web/package.json
 COPY packages/db/package.json packages/db/package.json
 RUN bun install --frozen-lockfile
 
+FROM dependencies AS migration
+WORKDIR /app
+COPY package.json tsconfig.base.json ./
+COPY packages/db ./packages/db
+CMD ["bun", "--filter", "@grade-management/db", "db:migrate"]
+
 FROM oven/bun:1.3.4 AS build
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
