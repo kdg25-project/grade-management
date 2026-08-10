@@ -9,7 +9,7 @@
     {
       "binding": "DB",
       "database_name": "grade-management",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "80c7cd4a-6501-48c0-92a0-c721aadd8d90",
       "migrations_dir": "packages/db/drizzle"
     }
   ],
