@@ -34,6 +34,9 @@ h3 { margin: 0; font-size: 20px; }
 .passwordToggle { position: absolute; top: 1px; right: 1px; }
 .passwordToggle svg, .menuButton svg { width: 20px; height: 20px; }
 .formError { margin: -4px 0 0; padding: 11px 12px; border-left: 4px solid #b93b35; background: #fff3f2; color: #882f2b; font-size: 14px; line-height: 1.5; }
+.formSuccess { margin: -4px 0 0; padding: 11px 12px; border-left: 4px solid #176443; background: #edf8f0; color: #245c3d; font-size: 14px; line-height: 1.5; }
+.resetLink { margin: 20px 0 0; text-align: center; font-size: 14px; font-weight: 700; }
+.resetLink a { color: #176443; }
 .primaryAction { min-height: 46px; width: 100%; margin-top: 4px; border-radius: 7px; font-size: 16px; font-weight: 800; cursor: pointer; }
 .spin { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

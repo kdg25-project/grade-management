@@ -8,9 +8,8 @@
     "paths": {
       "@/*": ["./*"]
     },
-    "plugins": [{ "name": "next" }],
-    "types": ["bun", "node", "react", "react-dom"]
+    "types": ["@cloudflare/workers-types", "bun", "node", "react", "react-dom"]
   },
-  "include": ["next-env.d.ts", ".next/types/**/*.ts", "**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules"]
 }

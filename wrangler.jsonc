@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "grade-management",
+  "main": "./apps/api/src/worker.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "grade-management",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "packages/db/drizzle"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["no-reply@example.invalid"]
+    }
+  ],
+  "vars": {
+    "BETTER_AUTH_URL": "http://localhost:5173",
+    "BETTER_AUTH_TRUSTED_ORIGINS": "http://localhost:5173",
+    "EMAIL_FROM": "no-reply@example.invalid",
+    "EMAIL_DELIVERY_ENABLED": "false"
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*"]
+  }
+}

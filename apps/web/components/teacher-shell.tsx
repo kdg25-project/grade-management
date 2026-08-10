@@ -1,14 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { BookOpenCheck, ClipboardPenLine, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 function TeacherNavigation({ onNavigate }: Readonly<{ onNavigate?: () => void }>) {
   return (
     <>
       <p className="navLabel">講師メニュー</p>
-      <Link href="/teacher/subjects" onClick={onNavigate}><BookOpenCheck aria-hidden="true" />担当科目</Link>
+      <Link to="/teacher/subjects" onClick={onNavigate}><BookOpenCheck aria-hidden="true" />担当科目</Link>
       <span className="navItemMuted"><ClipboardPenLine aria-hidden="true" />成績入力は科目から選択</span>
       <div className="supportBox">
         <strong>お困りのときは</strong>
@@ -33,7 +33,7 @@ export function TeacherShell({ children }: Readonly<{ children: React.ReactNode 
   return (
     <div className="teacherShell">
       <header className="appHeader">
-        <Link className="brand" href="/teacher/subjects">
+        <Link className="brand" to="/teacher/subjects">
           <span className="brandMark" aria-hidden="true">S</span>
           <span>
             <strong>SANSUN学園</strong>

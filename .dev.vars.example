@@ -1,0 +1,2 @@
+# Do not commit .dev.vars. Use a unique local-only secret.
+BETTER_AUTH_SECRET=replace-with-a-random-secret-at-least-32-characters-long

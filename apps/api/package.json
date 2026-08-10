@@ -8,9 +8,9 @@
     "./auth": "./src/auth.ts"
   },
   "scripts": {
-    "dev": "bun --hot src/index.ts",
-    "start": "bun src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "dev": "wrangler dev --config ../../wrangler.jsonc",
+    "start": "wrangler dev --config ../../wrangler.jsonc",
+    "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -20,6 +20,7 @@
     "hono": "4.12.8"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260809.1",
     "@types/bun": "1.3.4",
     "typescript": "5.9.3"
   }

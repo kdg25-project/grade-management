@@ -57,7 +57,7 @@ Test exact boundaries and values immediately below them.
 
 - Keep ordinary CSV import and the annual rollover wizard as separate workflows.
 - Reject the entire import when any record has a consistency error. Never partially commit a logical import.
-- Protect every import with one PostgreSQL transaction and a unique idempotency key. A Cloudflare D1 commit token is only an example of the idempotency pattern, not a required technology.
+- Protect every import with one D1 `batch()` operation and a unique idempotency key.
 - The annual rollover wizard handles graduation, teachers, subjects by grade, and incoming students in an ordered, reviewable workflow. Repeated submission must not duplicate or reapply completed work.
 - Validate file structure, references, duplicates, authorization, and target academic year before mutation. Return actionable row-level errors without exposing personal data unnecessarily.
 

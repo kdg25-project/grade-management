@@ -1,25 +1,52 @@
 # SANSUN学園 成績管理システム
 
-Bun workspacesで管理するNext.js + Honoのモノレポです。外部からのアクセスはNginxを入口とし、`/api/*` をHonoへ、それ以外をNext.jsへ転送します。
+Cloudflare Workers Static Assets、Hono、D1、およびVite React SPAで構成するBun workspacesモノレポです。単一Workerが`/api/*`をHonoへ、その他のURLをSPAへ配信します。Nginx、Docker、PostgreSQLは使用しません。
 
 ## 構成
 
-- `apps/web`: Next.js App Router
-- `apps/api`: Bun上で動作するHono API
-- `packages/db`: Drizzle ORM / PostgreSQL
-- `infra/nginx`: リバースプロキシ設定
+- `apps/web`: Vite + React Router SPA。既存の講師向けプロトタイプ画面を提供します。
+- `apps/api`: Hono WorkerとBetter Auth。`/api/health`、`/api/auth/*`を提供します。
+- `packages/db`: Drizzle SQLite schema とD1 migration。
 
 ## ローカル開発
 
 ```bash
-cp .env.example .env
-bun install
-docker compose up -d postgres
+bun install --frozen-lockfile
+cp .dev.vars.example .dev.vars
+# .dev.vars の BETTER_AUTH_SECRET を32文字以上のランダム値に変更
 bun run db:migrate
 bun run dev
 ```
 
-PostgreSQLは既定でホストの `localhost:5432` に公開され、`.env` の `DATABASE_URL` から接続できます。ホスト開発ではPostgreSQL起動後にmigrationを適用してください。Webは `http://localhost:3000`、APIは `http://localhost:3001/api/health` で起動します。Nginxを含む全サービスを使う場合は `docker compose up --build` を実行し、`http://localhost:8080` を開いてください。Composeでは`migrate`サービスがPostgreSQLの準備完了後にmigrationを適用し、成功した場合だけAPIを起動します。ホスト側の5432番ポートを使用中の場合は、`.env` の `POSTGRES_PORT` と `DATABASE_URL` のポートを同じ値へ変更してください。
+`bun run dev`はCloudflare Vite pluginによるWorkers開発サーバーを起動します。`http://localhost:5173`を開き、`/api/health`またはSPAの深いURL（例: `/teacher/subjects/math-1/grades`）を確認できます。ローカルは`EMAIL_DELIVERY_ENABLED=false`のため、再設定メールは実送信せず、受信者だけを構造化ログへ疑似出力します。URLやトークンはログに出力しません。
+
+### 旧ローカル状態からの移行
+
+この手順は、旧PostgreSQL構成から移行する**開発者だけ**に必要です。過去のWrangler開発キャッシュに旧migration名が残っていると、D1の初期migrationと衝突します。本番D1や共有データには使わないでください。
+
+開発サーバーを停止してから、存在するローカルキャッシュを任意の退避先へ移動するか、不要であることを確認して削除し、その後に`bun run db:migrate`を実行します。例えば、退避する場合は次のようにします。
+
+```bash
+mv .wrangler .wrangler.pre-d1-migration
+mv apps/web/.wrangler apps/web/.wrangler.pre-d1-migration
+bun run db:migrate
+```
+
+各ディレクトリが存在するときだけ実行してください。これらはgit管理外の開発用キャッシュであり、グリーンフィールドのD1 migrationが適用済みの環境では通常手順にこの作業は不要です。
+
+## D1とCloudflareの初期設定
+
+実アカウントを変更するコマンドは、このリポジトリでは実行しません。運用担当者は以下を実行してください。
+
+```bash
+wrangler d1 create grade-management
+# 表示された database_id を wrangler.jsonc の database_id へ設定
+wrangler d1 migrations apply grade-management --remote
+wrangler secret put BETTER_AUTH_SECRET
+wrangler deploy
+```
+
+`wrangler.jsonc`の`BETTER_AUTH_URL`と`BETTER_AUTH_TRUSTED_ORIGINS`は、カスタムドメインを設定したらそのHTTPS originへ更新してください。`EMAIL_FROM`と`send_email.allowed_sender_addresses`も、実際にオンボーディング済みの送信元へそろえ、実送信する本番環境でだけ`EMAIL_DELIVERY_ENABLED`を`"true"`へ変更します。Cloudflare Email Sendingはドメインオンボーディングが必要で、送信にはPaid Workersプランが必要です。`wrangler.jsonc`内のID・送信元は安全なplaceholderであり、そのまま本番へdeployできません。
 
 ## コマンド
 
@@ -28,13 +55,15 @@ bun run test
 bun run typecheck
 bun run build
 bun run db:generate
-bun run db:migrate
+bun run db:migrate        # local D1のみ
+bun run deploy:dry-run    # build生成済みWrangler configで検証
+bun run deploy            # 実行前にD1 ID/Email/secretを設定
 ```
 
-依存関係の再現性を保つため、パッケージのバージョンは固定し、コンテナ内では `bun install --frozen-lockfile` を使用します。
+Vite pluginは静的assetのdirectoryをbuild時に生成済みWrangler configへ注入します。そのためdry-runには`wrangler.jsonc`を直接指定せず、上記の`bun run deploy:dry-run`を使用してください。
 
-## 認証
+## 認証とパスワード再設定
 
-Better Authのメールアドレス・パスワード認証はHonoの`/api/auth/*`で提供します。自己サインアップは無効です。`.env`の`BETTER_AUTH_SECRET`は、開発を開始する前に32文字以上のランダムな値へ必ず置き換えてください。
+Better Auth 1.6.23のDrizzle SQLite adapterをD1へ接続します。サインアップは無効、リセットトークンは30分、セッションは600秒/更新間隔60秒です。パスワードリセット後は既存セッションをrevokeします。再設定申請画面はアカウントの有無を表示しません。
 
-現段階では初期管理者の払い出し、パスワードリセットメールの配送、単一セッション制限は未実装です。管理者または講師アカウントを利用するには、別途安全な初期登録手段を実装する必要があります。
+業務の成績データと確定処理は、現時点では画面確認用プロトタイプのままです。D1の複数操作を業務で追加する際は、`D1Database.batch()`と一意な冪等性キーを使い、論理的な一括処理を保護してください。

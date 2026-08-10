@@ -8,10 +8,7 @@ describe("API application", () => {
     const response = await app.request("/api/health");
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      status: "ok",
-      service: "grade-management-api",
-    });
+    expect(await response.text()).toBe('{"status":"ok","service":"grade-management-api"}');
   });
 
   for (const method of ["GET", "POST"] as const) {
@@ -25,7 +22,7 @@ describe("API application", () => {
       const response = await app.request("/api/auth/session", { method });
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ handled: true });
+      expect(await response.text()).toBe('{"handled":true}');
       expect(forwardedRequest?.method).toBe(method);
       expect(forwardedRequest && new URL(forwardedRequest.url).pathname).toBe(
         "/api/auth/session",

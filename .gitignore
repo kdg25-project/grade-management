@@ -11,12 +11,16 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+.wrangler/
+.cloudflare/
+worker-configuration.d.ts
 
 # Environment files
 .env
 .env.local
 .env.*.local
 !.env.example
+.dev.vars
 
 # Logs and editor files
 *.log

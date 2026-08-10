@@ -1,14 +1,14 @@
 "use client";
 
 import { Eye, EyeOff, LoaderCircle } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 
 export function LoginForm() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -28,7 +28,7 @@ export function LoginForm() {
         return;
       }
 
-      router.push("/teacher/subjects");
+      navigate("/teacher/subjects");
     } catch {
       setErrorMessage("ログインできませんでした。時間をおいてもう一度お試しください。");
     } finally {
