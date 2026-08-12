@@ -56,11 +56,29 @@ bun run typecheck
 bun run build
 bun run db:generate
 bun run db:migrate        # local D1のみ
+bun run admin:create -- --name "専任職員名" --email staff@example.com
 bun run deploy:dry-run    # buildとrootの自動redirect生成後に検証
 bun run deploy            # 実行前にD1 ID/Email/secretを設定
 ```
 
 Vite pluginは静的assetのdirectoryをbuild時に生成済みWrangler configへ注入します。build scriptはそのconfigへのredirectをrootの`.wrangler/deploy/config.json`にも生成するため、rootからの`wrangler deploy`が自動的に生成configを使います。dry-runにも`wrangler.jsonc`や生成configを直接指定せず、上記の`bun run deploy:dry-run`を使用してください。
+
+### 専任職員アカウントの作成
+
+サインアップは無効です。初回の専任職員（`role=admin`）は、運用担当者がローカルCLIから作成します。
+
+```bash
+# 開発用local D1（既定）
+bun run admin:create -- --name "成績管理担当" --email staff@example.com
+
+# 本番のリモートD1（確認に y と入力）
+bun run admin:create -- --name "成績管理担当" --email staff@example.com --remote
+
+# CIなどで、リモートD1への作成を明示的に承認する場合だけ
+bun run admin:create -- --name "成績管理担当" --email staff@example.com --remote --yes
+```
+
+パスワードは引数で指定できません。成功時にだけ強い一時パスワードが1回表示されるため、本人へ安全な経路で渡し、受領後すぐに変更するよう運用してください。アカウントには`mustChangePassword=true`を登録しますが、現時点のWeb/APIにはその変更を強制するガードは未実装です。`--remote`は実データを変更するため、対象のCloudflareアカウントとD1データベースを必ず確認してください。
 
 ### Cloudflare Workers Builds
 

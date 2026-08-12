@@ -18,11 +18,13 @@
     "test": "bun test scripts && bun --filter '*' test",
     "db:generate": "bun --filter @grade-management/db db:generate",
     "db:migrate": "wrangler d1 migrations apply grade-management --local --config wrangler.jsonc",
-    "db:studio": "bun --filter @grade-management/db db:studio"
+    "db:studio": "bun --filter @grade-management/db db:studio",
+    "admin:create": "bun scripts/create-admin.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.51.1",
     "@vitejs/plugin-react": "6.0.5",
+    "better-auth": "1.6.23",
     "vite": "8.2.1",
     "wrangler": "4.120.0"
   }
