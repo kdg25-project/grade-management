@@ -25,7 +25,7 @@ bun run deploy:dry-run
 
 Also run the narrowest relevant test first when it gives faster feedback. Do not treat a later success as cancelling an earlier failure.
 
-Cloudflare Vite plugin injects the static-assets directory into the build-generated Wrangler config, so do not run a deploy dry-run directly against the input `wrangler.jsonc`.
+Cloudflare Vite plugin injects the static-assets directory into the build-generated Wrangler config. The root build also writes `.wrangler/deploy/config.json`, which redirects Wrangler's root auto-discovery to that generated config, so do not run a deploy dry-run directly against the input `wrangler.jsonc` or pass the generated config explicitly.
 
 For database schema changes, run `bun run db:generate`, inspect the generated SQL for destructive or unintended operations, and verify migrations against disposable local D1. Do not apply migrations to shared or production data.
 

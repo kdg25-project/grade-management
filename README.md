@@ -43,7 +43,7 @@ wrangler d1 create grade-management
 # 表示された database_id を wrangler.jsonc の database_id へ設定
 wrangler d1 migrations apply grade-management --remote
 wrangler secret put BETTER_AUTH_SECRET
-wrangler deploy
+bun x wrangler deploy
 ```
 
 `wrangler.jsonc`の`BETTER_AUTH_URL`と`BETTER_AUTH_TRUSTED_ORIGINS`は、カスタムドメインを設定したらそのHTTPS originへ更新してください。`EMAIL_FROM`と`send_email.allowed_sender_addresses`も、実際にオンボーディング済みの送信元へそろえ、実送信する本番環境でだけ`EMAIL_DELIVERY_ENABLED`を`"true"`へ変更します。Cloudflare Email Sendingはドメインオンボーディングが必要で、送信にはPaid Workersプランが必要です。`wrangler.jsonc`内のID・送信元は安全なplaceholderであり、そのまま本番へdeployできません。
@@ -56,11 +56,20 @@ bun run typecheck
 bun run build
 bun run db:generate
 bun run db:migrate        # local D1のみ
-bun run deploy:dry-run    # build生成済みWrangler configで検証
+bun run deploy:dry-run    # buildとrootの自動redirect生成後に検証
 bun run deploy            # 実行前にD1 ID/Email/secretを設定
 ```
 
-Vite pluginは静的assetのdirectoryをbuild時に生成済みWrangler configへ注入します。そのためdry-runには`wrangler.jsonc`を直接指定せず、上記の`bun run deploy:dry-run`を使用してください。
+Vite pluginは静的assetのdirectoryをbuild時に生成済みWrangler configへ注入します。build scriptはそのconfigへのredirectをrootの`.wrangler/deploy/config.json`にも生成するため、rootからの`wrangler deploy`が自動的に生成configを使います。dry-runにも`wrangler.jsonc`や生成configを直接指定せず、上記の`bun run deploy:dry-run`を使用してください。
+
+### Cloudflare Workers Builds
+
+CloudflareダッシュボードのWorkers Buildsでは、次のコマンドを設定します。
+
+- Build command: `bun run build`
+- Deploy command: `bun x wrangler deploy`
+
+Viteのroot（`apps/web`）配下で生成されるredirectだけでなく、build時にリポジトリrootの`.wrangler/deploy/config.json`も生成されます。そのため、ダッシュボードの既定のroot deployからでも静的assetを含むWorkers設定を自動検出できます。
 
 ## 認証とパスワード再設定
 
