@@ -21,10 +21,14 @@
     "db:migrate": "wrangler d1 migrations apply grade-management --local --persist-to apps/web/.wrangler/state --config wrangler.jsonc",
     "db:studio": "bun --filter @grade-management/db db:studio",
     "admin:create": "bun scripts/create-admin.ts",
-    "dev:seed": "bun scripts/seed-dev.ts"
+    "dev:seed": "bun scripts/seed-dev.ts",
+    "e2e:prepare": "bun scripts/e2e-prepare.ts",
+    "e2e:serve": "bun scripts/e2e-serve.ts",
+    "e2e:test": "bun scripts/e2e-run.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.51.1",
+    "@playwright/test": "^1.62.1",
     "@vitejs/plugin-react": "6.0.5",
     "better-auth": "1.6.23",
     "vite": "8.2.1",

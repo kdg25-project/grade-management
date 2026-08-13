@@ -43,6 +43,16 @@ bun run deploy:dry-run
 bun run validate:production # 本番設定だけを安全に検査
 ```
 
+## ローカルE2E smoke
+
+```bash
+bun run e2e:test
+```
+
+このコマンドは、通常の開発用D1とは別の`apps/web/.wrangler/e2e-state`だけを削除・再作成し、migrationと最小fixtureを適用してから、Chromiumでログイン、初回パスワード変更、成績保存、学期確定・再開を順番に確認します。実行中は`4173`番ポートを専有するため、同じポートのserverを止めてください。生成される`.dev.vars.e2e`と`e2e/.credentials.json`はgit ignoreされ、E2E用の一時secret/パスワードを含みます。
+
+このsmokeはローカルWorkerとD1の回帰検知用です。通常画面応答3秒・成績反映10秒をローカルで確認しますが、本番のSLA証跡ではありません。PDF仕様は未確定のため、PDF生成のE2Eは意図的に含めていません。
+
 `bun run deploy:dry-run`はbuild後に生成されるWrangler redirectを使います。`wrangler.jsonc`や生成configを直接指定せず、このscriptを使ってください。
 
 ## Cloudflare初期設定とdeploy順序

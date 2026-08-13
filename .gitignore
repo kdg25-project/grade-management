@@ -21,6 +21,13 @@ worker-configuration.d.ts
 .env.*.local
 !.env.example
 .dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Local E2E fixtures and browser artifacts may contain credentials or PII.
+e2e/.credentials.json
+playwright-report/
+test-results/
 
 # Logs and editor files
 *.log
