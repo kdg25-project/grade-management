@@ -15,6 +15,11 @@ const config = join(root, "wrangler.jsonc");
 const e2eState = e2eArtifactPath(root, "apps/web/.wrangler/e2e-state");
 const e2eDevVars = e2eArtifactPath(root, ".dev.vars.e2e");
 const credentialsFile = e2eArtifactPath(root, "e2e/.credentials.json");
+const rolloverGraduateFixtureSql = `
+INSERT INTO academic_years (year,is_current,created_at,updated_at) VALUES (2024,0,unixepoch(),unixepoch()) ON CONFLICT(year) DO NOTHING;
+INSERT INTO students (id,student_number,name,name_kana,birth_date,gender,email,course_id,enrollment_year,status,status_changed_at,created_at,updated_at) VALUES ('e2e-rollover-graduate','E2E-ROLLOVER-GRADUATE-2024-001','E2E 年度更新卒業候補','イーツーイーネンドコウシンソツギョウコウホ','2006-04-01','女','e2e-rollover-graduate@example.test','system-engineer',2024,'enrolled',unixepoch(),unixepoch(),unixepoch()) ON CONFLICT(id) DO NOTHING;
+INSERT INTO student_status_history (id,student_id,status,effective_academic_year,changed_at,reason) SELECT 'e2e-rollover-graduate-enrolled','e2e-rollover-graduate','enrolled',2024,unixepoch(),'E2E年度更新fixture' WHERE NOT EXISTS (SELECT 1 FROM student_status_history WHERE id='e2e-rollover-graduate-enrolled');
+`;
 
 type Credentials = {
   admin: { email: string; password: string; changedPassword: string };
@@ -47,7 +52,7 @@ async function seed() {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "grade-management-e2e-"));
   const sqlFile = join(temporaryDirectory, "fixture.sql");
   try {
-    await writeFile(sqlFile, buildSeedSql(plan), { encoding: "utf8", mode: 0o600 });
+    await writeFile(sqlFile, `${buildSeedSql(plan)}\n${rolloverGraduateFixtureSql}`, { encoding: "utf8", mode: 0o600 });
     await chmod(sqlFile, 0o600);
     await run([
       process.execPath, "x", "wrangler", "d1", "execute", database,
