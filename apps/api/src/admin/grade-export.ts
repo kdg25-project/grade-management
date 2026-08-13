@@ -20,6 +20,8 @@ export type GradeExportRow = { id: string; studentNumber: string; studentName: s
 export type BrowserBinding = Pick<BrowserRun, "quickAction">;
 
 const MAX_ROWS = 10_000; const MAX_BYTES = 5_000_000;
+/** Leave a small D1/audit cleanup budget inside the product's 10-second PDF response target. */
+const PDF_RENDER_TIMEOUT_MS = 8_000;
 const headers = ["学籍番号", "氏名", "年度", "学期", "専攻", "学年", "科目名", "出席率", "最終評価"];
 export const gradePdfOptions = { format: "a4", landscape: true, printBackground: true, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: "<div style=\"font-family:'IPAfont Gothic','Noto Sans CJK JP',sans-serif;font-size:8px;width:100%;text-align:center\">SANSUN学園 成績出力 — <span class=\"pageNumber\"></span> / <span class=\"totalPages\"></span></div>", margin: { top: "14mm", right: "10mm", bottom: "16mm", left: "10mm" } } as const;
 
@@ -65,7 +67,7 @@ export class PdfExportUnavailableError extends AdminDomainError {
 }
 
 export class D1GradeExportService implements GradeExportService {
-  constructor(private readonly database: D1Database, private readonly newId: () => string = () => createWorkerId(), private readonly clock: Clock = () => new Date(), private readonly browser?: BrowserBinding) {}
+  constructor(private readonly database: D1Database, private readonly newId: () => string = () => createWorkerId(), private readonly clock: Clock = () => new Date(), private readonly browser?: BrowserBinding, private readonly pdfRenderTimeoutMs = PDF_RENDER_TIMEOUT_MS) {}
   private now() { return Math.floor(this.clock().getTime() / 1000); }
   private async currentYear() { return ensureCurrentAcademicYear(this.database, this.clock); }
   private async resolved(query: GradeExportQuery) { return validateGradeExportQuery(query, await this.currentYear()); }
@@ -97,6 +99,12 @@ export class D1GradeExportService implements GradeExportService {
     catch (error) { await this.discard(token, actorId, claimId); throw error; }
   }
   private async discard(token: string, actorId: string, claimId: string) { await this.database.prepare("DELETE FROM grade_export_snapshots WHERE id=? AND owner_user_id=? AND claim_id=?").bind(token, actorId, claimId).run(); }
+  private async awaitPdfResponse(response: Promise<Response>) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new PdfExportUnavailableError()), this.pdfRenderTimeoutMs); });
+    try { return await Promise.race([response, timeout]); }
+    finally { if (timer) clearTimeout(timer); }
+  }
   private async complete(actorId: string, token: string, snapshot: ClaimedSnapshot, action: "grades_exported" | "grades_pdf_exported") {
     await this.database.batch([
       this.database.prepare("INSERT INTO audit_logs (id,actor_user_id,action,entity_type,entity_id,academic_year,payload_json) VALUES (?,?,?,'grade_export',?,?,?)").bind(this.newId(), actorId, action, "grades", snapshot.academicYear, JSON.stringify({ rowCount: snapshot.rows.length })),
@@ -139,15 +147,18 @@ export class D1GradeExportService implements GradeExportService {
     if (!this.browser) throw new PdfExportUnavailableError();
     const completed = await this.renderAndComplete(actorId, token, "pdf", "grades_pdf_exported", async (snapshot) => {
       try {
-        const response = await this.browser!.quickAction("pdf", { html: toGradePdfHtml(snapshot.rows, { academicYear: snapshot.academicYear, scope: snapshot.scope, generatedAt: snapshot.claimedAt }), pdfOptions: gradePdfOptions });
+        const response = await this.awaitPdfResponse(this.browser!.quickAction("pdf", { html: toGradePdfHtml(snapshot.rows, { academicYear: snapshot.academicYear, scope: snapshot.scope, generatedAt: snapshot.claimedAt }), cacheTTL: 0, setJavaScriptEnabled: false, actionTimeout: this.pdfRenderTimeoutMs, pdfOptions: { ...gradePdfOptions, timeout: this.pdfRenderTimeoutMs } }));
         const retryAfter = response.status === 429 && /^[\x20-\x7e]{1,128}$/.test(response.headers.get("Retry-After") ?? "") ? response.headers.get("Retry-After")! : undefined;
         const contentType = response.headers.get("Content-Type") ?? "";
-        if (!response.ok || !/^application\/pdf(?:\s*;|$)/i.test(contentType)) throw new PdfExportUnavailableError(retryAfter);
+        if (!response.ok || !/^application\/pdf(?:\s*;|$)/i.test(contentType)) {
+          console.error(JSON.stringify({ event: "grade_pdf_render_response_rejected", status: response.status, pdfContentType: /^application\/pdf(?:\s*;|$)/i.test(contentType) }));
+          throw new PdfExportUnavailableError(retryAfter);
+        }
         const pdf = await response.arrayBuffer();
         if (pdf.byteLength === 0) throw new PdfExportUnavailableError();
         return pdf;
       } catch (error) {
-        if (error instanceof PdfExportUnavailableError) throw error;
+        if (error instanceof PdfExportUnavailableError) { console.error(JSON.stringify({ event: "grade_pdf_render_unavailable", deadlineMs: this.pdfRenderTimeoutMs })); throw error; }
         console.error(JSON.stringify({ event: "grade_pdf_render_failed", errorType: error instanceof Error ? error.name : typeof error }));
         throw new PdfExportUnavailableError();
       }
