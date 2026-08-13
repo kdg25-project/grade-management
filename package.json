@@ -12,14 +12,16 @@
     "dev:web": "vite --config vite.config.ts",
     "dev:api": "vite --config vite.config.ts",
     "build": "vite build --config vite.config.ts && bun scripts/generate-wrangler-deploy-config.ts",
-    "deploy": "bun run build && wrangler deploy",
+    "validate:production": "bun scripts/validate-production-config.ts",
+    "deploy": "bun run build && bun run validate:production && wrangler deploy",
     "deploy:dry-run": "bun run build && wrangler deploy --dry-run",
     "typecheck": "bun --filter '*' typecheck",
     "test": "bun test scripts && bun --filter '*' test",
     "db:generate": "bun --filter @grade-management/db db:generate",
-    "db:migrate": "wrangler d1 migrations apply grade-management --local --config wrangler.jsonc",
+    "db:migrate": "wrangler d1 migrations apply grade-management --local --persist-to apps/web/.wrangler/state --config wrangler.jsonc",
     "db:studio": "bun --filter @grade-management/db db:studio",
-    "admin:create": "bun scripts/create-admin.ts"
+    "admin:create": "bun scripts/create-admin.ts",
+    "dev:seed": "bun scripts/seed-dev.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.51.1",

@@ -8,6 +8,10 @@ import { hashPassword } from "better-auth/crypto";
 const databaseName = "grade-management";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const configPath = join(projectRoot, "wrangler.jsonc");
+// The Vite Cloudflare plugin resolves its local Miniflare state from apps/web.
+// Keep local administration commands on that exact state so an account created
+// here can immediately sign in to `bun run dev`.
+const viteLocalStatePath = join(projectRoot, "apps", "web", ".wrangler", "state");
 
 export type Target = "local" | "remote";
 
@@ -206,6 +210,7 @@ export function buildWranglerWriteCommand(sqlFile: string, target: Target) {
     "--file",
     sqlFile,
     target === "remote" ? "--remote" : "--local",
+    ...(target === "local" ? ["--persist-to", viteLocalStatePath] : []),
     "--config",
     configPath,
     "--json",
@@ -223,6 +228,7 @@ export function buildWranglerReadCommand(sql: string, target: Target) {
     "--command",
     sql,
     target === "remote" ? "--remote" : "--local",
+    ...(target === "local" ? ["--persist-to", viteLocalStatePath] : []),
     "--config",
     configPath,
     "--json",
@@ -239,6 +245,25 @@ async function defaultRunCommand(command: string[], cwd: string): Promise<Comman
   return { exitCode, stdout, stderr };
 }
 
+const isDatabaseBusy = (result: CommandResult) => /SQLITE_BUSY|database is locked/iu.test(`${result.stderr}\n${result.stdout}`);
+const waitForRetry = (milliseconds: number) => new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds));
+
+async function runD1Command(
+  command: string[],
+  target: Target,
+  runCommand: CommandRunner,
+) {
+  let result = await runCommand(command, projectRoot);
+  // Miniflare briefly retains SQLite recovery locks after another local Wrangler
+  // command exits. Retrying the unchanged command is safe: a busy process has
+  // not executed it, and remote writes deliberately never retry here.
+  for (let attempt = 0; target === "local" && result.exitCode !== 0 && isDatabaseBusy(result) && attempt < 2; attempt += 1) {
+    await waitForRetry((attempt + 1) * 100);
+    result = await runCommand(command, projectRoot);
+  }
+  return result;
+}
+
 /** Writes potentially sensitive SQL through a 0600 temporary file. */
 export async function executeWriteSql(
   sql: string,
@@ -250,9 +275,10 @@ export async function executeWriteSql(
   try {
     await writeFile(sqlFile, sql, { encoding: "utf8", mode: 0o600 });
     await chmod(sqlFile, 0o600);
-    const result = await (dependencies.runCommand ?? defaultRunCommand)(
+    const result = await runD1Command(
       buildWranglerWriteCommand(sqlFile, target),
-      projectRoot,
+      target,
+      dependencies.runCommand ?? defaultRunCommand,
     );
     if (result.exitCode !== 0) {
       throw new CliError(formatWranglerError(result));
@@ -273,9 +299,10 @@ export async function executeReadSql(
   target: Target,
   dependencies: Pick<CreateAdminDependencies, "runCommand"> = {},
 ) {
-  const result = await (dependencies.runCommand ?? defaultRunCommand)(
+  const result = await runD1Command(
     buildWranglerReadCommand(sql, target),
-    projectRoot,
+    target,
+    dependencies.runCommand ?? defaultRunCommand,
   );
   if (result.exitCode !== 0) {
     throw new CliError(formatWranglerError(result));
@@ -284,9 +311,11 @@ export async function executeReadSql(
 }
 
 function formatWranglerError(result: CommandResult) {
-  const detail = [result.stderr, result.stdout]
-    .filter(Boolean)
-    .join("\n")
+  const raw = [result.stderr, result.stdout].filter(Boolean).join("\n");
+  if (isDatabaseBusy(result)) {
+    return "local D1が開発serverにより使用中です。bun run dev を停止してから、もう一度実行してください。";
+  }
+  const detail = raw
     .replace(/\s+/gu, " ")
     .slice(0, 500);
   return detail ? `D1への書き込みに失敗しました: ${detail}` : "D1への書き込みに失敗しました。";

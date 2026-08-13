@@ -89,6 +89,7 @@ describe("admin:create SQL and Wrangler command", () => {
     const remote = buildWranglerWriteCommand("/tmp/admin.sql", "remote");
 
     expect(local).toContain("--local");
+    expect(local).toContain("--persist-to");
     expect(local).not.toContain("--remote");
     expect(remote).toContain("--remote");
     expect(remote).not.toContain("--local");
@@ -100,6 +101,7 @@ describe("admin:create SQL and Wrangler command", () => {
     expect(readLocal).toContain("--command");
     expect(readLocal).not.toContain("--file");
     expect(readLocal).toContain("--local");
+    expect(readLocal).toContain("--persist-to");
     expect(readRemote).toContain("--remote");
   });
 
@@ -306,5 +308,30 @@ describe("admin:create execution safeguards", () => {
     expect(executedSql[1]).toContain('WHERE "id" = \'new-account-id\'');
     expect(executedSql[1]).toContain('WHERE "id" = \'new-user-id\'');
     expect(executedSql[1]).not.toContain('WHERE "email" =');
+  });
+
+  it("turns a local D1 lock into a safe actionable retry message", async () => {
+    const root = await temporaryRoot();
+    await expect(
+      executeWriteSql("SELECT 1;", "local", {
+        temporaryRoot: root,
+        runCommand: async () => ({ exitCode: 1, stdout: "", stderr: "SQLITE_BUSY: database is locked" }),
+      }),
+    ).rejects.toThrow("bun run dev を停止");
+  });
+
+  it("retries a transient local D1 recovery lock before failing", async () => {
+    const root = await temporaryRoot();
+    let attempts = 0;
+    await expect(executeWriteSql("SELECT 1;", "local", {
+      temporaryRoot: root,
+      runCommand: async () => {
+        attempts += 1;
+        return attempts === 1
+          ? { exitCode: 1, stdout: "", stderr: "SQLITE_BUSY_RECOVERY: database is locked" }
+          : { exitCode: 0, stdout: emptyResponse, stderr: "" };
+      },
+    })).resolves.toBe(emptyResponse);
+    expect(attempts).toBe(2);
   });
 });
