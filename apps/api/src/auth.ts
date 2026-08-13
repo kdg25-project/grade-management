@@ -14,6 +14,7 @@ import { createPasswordResetEmailSender, type EmailBinding } from "./email";
 
 export type AuthEnvironment = {
   DB: D1Database;
+  BROWSER?: import("./admin/grade-export").BrowserBinding;
   EMAIL?: EmailBinding;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;

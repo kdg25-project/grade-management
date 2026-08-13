@@ -12,6 +12,8 @@ const migrationFiles = [
   new URL("../drizzle/0007_wild_prism.sql", import.meta.url),
   new URL("../drizzle/0008_parched_tomorrow_man.sql", import.meta.url),
   new URL("../drizzle/0009_quiet_mimic.sql", import.meta.url),
+  new URL("../drizzle/0010_unique_mister_fear.sql", import.meta.url),
+  new URL("../drizzle/0011_lazy_star_brand.sql", import.meta.url),
 ];
 
 async function createMigratedDatabase() {
@@ -134,6 +136,7 @@ describe("generated D1 migration constraints", () => {
     const database = await createMigratedDatabase();
     try {
       database.exec("INSERT INTO grade_export_snapshots (id,owner_user_id,academic_year,expires_at) VALUES ('snapshot-1','teacher-1',2026,9999999999); INSERT INTO grade_export_snapshot_rows (snapshot_id,position,student_number,student_name,academic_year,term,course_name,grade_level,subject_name,attendance_rate,letter_grade) VALUES ('snapshot-1',1,'D26-001','学生一郎',2026,1,'SE',1,'DB',100,'S'); UPDATE grade_export_snapshots SET claim_id='claim-1',claimed_at=1 WHERE id='snapshot-1'");
+      expect(database.query("SELECT scope,format FROM grade_export_snapshots WHERE id='snapshot-1'").get()).toEqual({ scope: "year_all_students", format: "csv" });
       expect(() => database.exec("INSERT INTO grade_export_snapshots (id,owner_user_id,academic_year,expires_at,claim_id) VALUES ('snapshot-2','teacher-1',2026,9999999999,'claim-1')")).toThrow();
       database.exec("DELETE FROM grade_export_snapshots WHERE id='snapshot-1'"); expect(database.query("SELECT count(*) AS count FROM grade_export_snapshot_rows").get()).toEqual({ count: 0 });
     } finally { database.close(); }

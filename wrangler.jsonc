@@ -17,6 +17,9 @@
   "r2_buckets": [
     { "binding": "BACKUP_BUCKET", "bucket_name": "grade-management-backups" }
   ],
+  "browser": {
+    "binding": "BROWSER"
+  },
   "workflows": [
     {
       "name": "grade-management-daily-backup",

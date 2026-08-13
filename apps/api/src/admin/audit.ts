@@ -51,6 +51,7 @@ export const summarizeAudit = (action: string, rawPayload: unknown) => {
     case "annual_rollover_applied": return "年度更新を一括反映";
     case "csv_imported": return "通常CSVを一括取込";
     case "grades_exported": return "成績CSVを出力";
+    case "grades_pdf_exported": return "成績PDFを出力";
     case "student_created": return "学生を登録";
     case "student_updated": return "学生情報を更新";
     case "student_status_changed": return `${studentStatusLabel(payload?.status)}に変更${effectiveYear ? `（${effectiveYear}年度適用）` : ""}`;

@@ -1,0 +1,1 @@
+ALTER TABLE `grade_export_snapshots` ADD `format` text DEFAULT 'csv' NOT NULL;

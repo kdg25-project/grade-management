@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-type Config = { account_id?: unknown; vars?: Record<string, unknown>; d1_databases?: unknown; send_email?: unknown; r2_buckets?: unknown; workflows?: unknown };
+type Config = { account_id?: unknown; vars?: Record<string, unknown>; d1_databases?: unknown; send_email?: unknown; r2_buckets?: unknown; workflows?: unknown; browser?: unknown };
 
 /** Removes JSONC comments without touching URL-like strings. Wrangler configs need no broader parser. */
 export const stripJsoncComments = (source: string) => {
@@ -84,6 +84,8 @@ export const productionConfigErrors = (config: unknown) => {
   else if (configuredAccountId !== accountId) errors.push("account_id must match CLOUDFLARE_ACCOUNT_ID");
   const buckets = Array.isArray(source?.r2_buckets) ? source.r2_buckets.map(record) : [];
   if (!buckets.some((bucket) => bucket?.binding === "BACKUP_BUCKET" && typeof bucket.bucket_name === "string" && !placeholderD1(bucket.bucket_name.trim()))) errors.push("BACKUP_BUCKET must use a non-placeholder R2 bucket");
+  const browser = record(source?.browser);
+  if (browser?.binding !== "BROWSER") errors.push("BROWSER Browser Run binding must be configured");
   const workflows = Array.isArray(source?.workflows) ? source.workflows.map(record) : [];
   if (!workflows.some((workflow) => workflow?.binding === "DAILY_BACKUP_WORKFLOW" && workflow.class_name === "DailyBackupWorkflow")) errors.push("Daily backup Workflow binding must be configured");
   const emailBindings = Array.isArray(source?.send_email) ? source.send_email.map(record) : [];

@@ -8,6 +8,7 @@ const valid = {
   d1_databases: [{ database_id: "80c7cd4a-6501-48c0-92a0-c721aadd8d90" }],
   send_email: [{ allowed_sender_addresses: ["no-reply@example.jp"] }],
   r2_buckets: [{ binding: "BACKUP_BUCKET", bucket_name: "grade-management-backups" }],
+  browser: { binding: "BROWSER" },
   workflows: [{ binding: "DAILY_BACKUP_WORKFLOW", class_name: "DailyBackupWorkflow" }],
 };
 
@@ -19,7 +20,7 @@ describe("production deploy configuration", () => {
   });
 
   it("rejects each unsafe production setting without echoing its value", () => {
-    const invalid = { ...valid, account_id: "replace-with-account", vars: { ...valid.vars, BETTER_AUTH_URL: "http://localhost:5173", BETTER_AUTH_TRUSTED_ORIGINS: "https://grades.example.jp,http://localhost:5173", EMAIL_FROM: "no-reply@example.invalid", EMAIL_DELIVERY_ENABLED: "false", CLOUDFLARE_ACCOUNT_ID: "replace-with-account", D1_DATABASE_ID: "replace-with-database" }, d1_databases: [{ database_id: "00000000-0000-0000-0000-000000000000" }], send_email: [{ allowed_sender_addresses: ["another@example.jp"] }], r2_buckets: [{ binding: "BACKUP_BUCKET", bucket_name: "replace-with-bucket" }], workflows: [] };
+    const invalid = { ...valid, account_id: "replace-with-account", vars: { ...valid.vars, BETTER_AUTH_URL: "http://localhost:5173", BETTER_AUTH_TRUSTED_ORIGINS: "https://grades.example.jp,http://localhost:5173", EMAIL_FROM: "no-reply@example.invalid", EMAIL_DELIVERY_ENABLED: "false", CLOUDFLARE_ACCOUNT_ID: "replace-with-account", D1_DATABASE_ID: "replace-with-database" }, d1_databases: [{ database_id: "00000000-0000-0000-0000-000000000000" }], send_email: [{ allowed_sender_addresses: ["another@example.jp"] }], r2_buckets: [{ binding: "BACKUP_BUCKET", bucket_name: "replace-with-bucket" }], browser: {}, workflows: [] };
     const errors = productionConfigErrors(invalid);
     expect(errors).toContain("BETTER_AUTH_URL must be an HTTPS non-localhost URL");
     expect(errors).toContain("BETTER_AUTH_TRUSTED_ORIGINS must contain only HTTPS non-localhost origins");
@@ -31,6 +32,7 @@ describe("production deploy configuration", () => {
     expect(errors).toContain("CLOUDFLARE_ACCOUNT_ID must be configured and not a placeholder");
     expect(errors).toContain("account_id must be configured and not a placeholder");
     expect(errors).toContain("BACKUP_BUCKET must use a non-placeholder R2 bucket");
+    expect(errors).toContain("BROWSER Browser Run binding must be configured");
     expect(errors).toContain("Daily backup Workflow binding must be configured");
     expect(errors.join(" ")).not.toContain("localhost:5173");
   });

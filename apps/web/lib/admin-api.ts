@@ -57,10 +57,12 @@ export async function applyRollover(json: RolloverInput & { idempotencyKey: stri
 const gradeExportPreviewEndpoint = apiClient.api.admin["grade-export"].preview.$post;
 export type GradeExportPreviewResponse = InferResponseType<typeof gradeExportPreviewEndpoint, 200>;
 export type GradeExportScope = "year_all_students" | "three_years" | "previous_year" | "confirmed_to_date" | "term";
-export type GradeExportQuery = { academicYear?: number; scope: GradeExportScope; term?: 1 | 2; courseId?: string; gradeLevel?: 1 | 2 | 3; subjectId?: string };
-const exportQuery = (query: GradeExportQuery) => ({ academicYear: query.academicYear, scope: query.scope, term: query.term, courseId: query.courseId, gradeLevel: query.gradeLevel, subjectId: query.subjectId });
+export type GradeExportFormat = "csv" | "pdf";
+export type GradeExportQuery = { academicYear?: number; scope: GradeExportScope; format: GradeExportFormat; term?: 1 | 2; courseId?: string; gradeLevel?: 1 | 2 | 3; subjectId?: string };
+const exportQuery = (query: GradeExportQuery) => ({ academicYear: query.academicYear, scope: query.scope, format: query.format, term: query.term, courseId: query.courseId, gradeLevel: query.gradeLevel, subjectId: query.subjectId });
 export async function previewGradeExport(query: GradeExportQuery, signal?: AbortSignal) { const response = await gradeExportPreviewEndpoint({ json: exportQuery(query) }, { init: { signal } }); return success(await response.json(), response.status); }
 export async function downloadGradeExport(token: string, signal?: AbortSignal) { return apiClient.api.admin["grade-export"].download.$get({ query: { token } }, { init: { signal } }); }
+export async function downloadGradePdf(token: string, signal?: AbortSignal) { return apiClient.api.admin["grade-export"].pdf.$get({ query: { token } }, { init: { signal } }); }
 
 const normalImportPreviewEndpoint = apiClient.api.admin.imports.preview.$post;
 const normalImportApplyEndpoint = apiClient.api.admin.imports.apply.$post;

@@ -201,14 +201,15 @@ test.describe("grade-management local smoke", () => {
     await expect(page.getByText(/1回目: F/u)).toBeVisible();
 
     await page.goto("/admin/exports");
-    await expect(page.getByRole("heading", { name: "成績CSV出力" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "成績出力" })).toBeVisible();
     await page.getByRole("combobox", { name: "出力パターン", exact: true }).selectOption({ label: "年度・学期別" });
+    await page.getByRole("combobox", { name: "出力形式", exact: true }).selectOption("csv");
     await expect(page.getByRole("combobox", { name: "出力パターン", exact: true })).toHaveValue("term");
     await page.getByRole("combobox", { name: "学期", exact: true }).selectOption("1");
     await expect(page.getByRole("combobox", { name: "学期", exact: true })).toHaveValue("1");
     const exportPreviewResponse = page.waitForResponse((response) => response.url().includes("/api/admin/grade-export/preview") && response.request().method() === "POST");
     await page.getByRole("button", { name: "件数を確認する" }).click();
-    await expect(page.getByText("2027年度：1件の確定済み成績を出力します。", { exact: true })).toBeVisible();
+    await expect(page.getByText("2027年度：1件の確定済み成績をCSVで出力します。", { exact: true })).toBeVisible();
     const exportPreview = await (await exportPreviewResponse).json() as { token: string };
     expect(exportPreview.token).toBeTruthy();
     const downloadResponse = page.waitForResponse((response) => response.url().includes("/api/admin/grade-export/download") && response.request().method() === "GET");

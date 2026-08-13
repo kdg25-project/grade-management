@@ -59,7 +59,7 @@ export const createWorkerApp = (env: AuthEnvironment, executionCtx: ExecutionCon
     adminMasterService: createAdminMasterService(env.DB, requestPasswordResetAndWait),
     auditService: createAuditService(env.DB),
     rolloverService: createRolloverService(env.DB),
-    gradeExportService: createGradeExportService(env.DB),
+    gradeExportService: createGradeExportService(env.DB, env.BROWSER),
     normalImportService: createNormalImportService(env.DB),
   });
 };

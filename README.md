@@ -104,7 +104,7 @@ bun run admin:create -- --name "成績管理担当" --email staff@example.com --
 
 CSV取込で新規利用者を作る場合、一時パスワードは成功レスポンス/画面で**一度だけ**返ります。監査、idempotency result、snapshotには保存しません。通信切断などで受領に失敗した場合は、既存の管理者によるパスワード再設定手順で対応してください。画面表示した一時パスワードCSVは安全な場所へ保存し、端末に残さないでください。
 
-成績CSV出力は確定済み成績行のみを対象にし、10,000行・5MBで上限を設けています。Excel formula injectionを防ぐエスケープを行います。
+成績出力は、年度・全学生、直近3年度、前年度、確定済み累計3年度、年度・学期別の5パターンと専攻・学年・科目の絞り込みを共通で使います。確定済みの最新受験成績行だけを対象にし、確認時点のowner-bound TTL snapshotをCSVまたはPDFで一度だけ出力します。CSVは10,000行・5MBで上限を設け、Excel formula injectionを防ぐエスケープを行います。PDFはCloudflare Browser Runの`BROWSER` bindingが必要で、ローカル開発ではQuick Actionを利用できないためモック検証のみを行い、deploy後に本番環境で出力確認してください。
 
 ## バックアップ・復旧
 
@@ -121,4 +121,4 @@ bun run db:migrate
 bun run deploy:dry-run
 ```
 
-通常画面応答3秒、成績反映10秒、CSV処理1分を目標とします。D1の一括処理はrowごとのstatementを避け、JSON1集合SQLと上限でWorker/D1 budgetを保護します。
+通常画面応答3秒、成績反映10秒、PDF生成10秒、CSV処理1分を目標とします。D1の一括処理はrowごとのstatementを避け、JSON1集合SQLと上限でWorker/D1 budgetを保護します。

@@ -406,6 +406,10 @@ export const gradeExportSnapshots = sqliteTable(
     id: text("id").primaryKey(),
     ownerUserId: text("owner_user_id").notNull().references(() => user.id),
     academicYear: integer("academic_year").notNull().references(() => academicYears.year),
+    /** Display-only export scope retained with immutable output rows for PDF headings. */
+    scope: text("scope").notNull().default("year_all_students"),
+    /** The one permitted output format is fixed when the immutable preview is created. */
+    format: text("format").notNull().default("csv"),
     expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
     /** Atomic download claim: once set, this short-lived snapshot cannot be consumed again. */
     claimId: text("claim_id").unique(),
