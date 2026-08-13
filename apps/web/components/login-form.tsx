@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
+import { destinationForUser } from "@/lib/session-routing";
 
 export function LoginForm() {
   const navigate = useNavigate();
@@ -28,7 +29,12 @@ export function LoginForm() {
         return;
       }
 
-      navigate("/teacher/subjects");
+      const session = await authClient.getSession();
+      if (!session.data) {
+        setErrorMessage("ログイン情報を確認できませんでした。もう一度お試しください。");
+        return;
+      }
+      navigate(destinationForUser(session.data.user), { replace: true });
     } catch {
       setErrorMessage("ログインできませんでした。時間をおいてもう一度お試しください。");
     } finally {

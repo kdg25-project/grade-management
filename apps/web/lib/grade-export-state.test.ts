@@ -1,0 +1,3 @@
+import { describe, expect, it } from "bun:test";
+import { gradeExportPatterns, gradeExportQuery } from "./grade-export-state";
+describe("grade export state", () => { it("requires a term only for term exports and keeps filters typed", () => { expect(gradeExportPatterns).toHaveLength(5); expect(gradeExportQuery({ year: "2027", scope: "term", term: "1", courseId: "x", gradeLevel: "2", subjectId: "s" })).toEqual({ academicYear: 2027, scope: "term", term: 1, courseId: "x", gradeLevel: 2, subjectId: "s" }); expect(gradeExportQuery({ year: "", scope: "year_all_students", term: "2", courseId: "", gradeLevel: "", subjectId: "" }).term).toBeUndefined(); }); });
