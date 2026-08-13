@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idempotency_operations_rollover_success_year_unique` ON `idempotency_operations` (`academic_year`) WHERE "idempotency_operations"."operation_type" = 'annual_rollover' AND "idempotency_operations"."status" = 'succeeded';

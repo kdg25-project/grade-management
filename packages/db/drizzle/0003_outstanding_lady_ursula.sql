@@ -1,0 +1,2 @@
+ALTER TABLE `audit_logs` ADD `academic_year` integer REFERENCES academic_years(year);--> statement-breakpoint
+CREATE INDEX `audit_logs_year_created_id_idx` ON `audit_logs` (`academic_year`,`created_at`,`id`);

@@ -8,6 +8,55 @@
       "when": 1786280584902,
       "tag": "0000_zippy_rumiko_fujikawa",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786542725435,
+      "tag": "0001_redundant_shen",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786545329420,
+      "tag": "0002_luxuriant_silverclaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786551358033,
+      "tag": "0003_outstanding_lady_ursula",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786552593570,
+      "tag": "0004_white_violations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786583113331,
+      "tag": "0005_naive_machine_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786583598032,
+      "tag": "0006_natural_lucky_pierre",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786584067092,
+      "tag": "0007_wild_prism",
+      "breakpoints": true
     }
   ]
 }

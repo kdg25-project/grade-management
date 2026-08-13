@@ -1,0 +1,2 @@
+ALTER TABLE `subject_term_statuses` ADD `last_transition_id` text;--> statement-breakpoint
+CREATE UNIQUE INDEX `subject_term_statuses_last_transition_id_unique` ON `subject_term_statuses` (`last_transition_id`);
