@@ -10,6 +10,8 @@ const migrationFiles = [
   new URL("../drizzle/0005_naive_machine_man.sql", import.meta.url),
   new URL("../drizzle/0006_natural_lucky_pierre.sql", import.meta.url),
   new URL("../drizzle/0007_wild_prism.sql", import.meta.url),
+  new URL("../drizzle/0008_parched_tomorrow_man.sql", import.meta.url),
+  new URL("../drizzle/0009_quiet_mimic.sql", import.meta.url),
 ];
 
 async function createMigratedDatabase() {
@@ -141,6 +143,20 @@ describe("generated D1 migration constraints", () => {
     try {
       database.exec("INSERT INTO import_snapshots (id,owner_user_id,academic_year,payload_json,payload_hash,expires_at) VALUES ('import-1','teacher-1',2026,'{}','hash',9999999999); UPDATE import_snapshots SET claim_id='claim-import-1',claimed_at=1 WHERE id='import-1'");
       expect(() => database.exec("INSERT INTO import_snapshots (id,owner_user_id,academic_year,payload_json,payload_hash,expires_at,claim_id) VALUES ('import-2','teacher-1',2026,'{}','hash',9999999999,'claim-import-1')")).toThrow();
+    } finally { database.close(); }
+  });
+  it("persists one stable backup intent per schedule and records completed metadata without retention deletion", async () => {
+    const database = await createMigratedDatabase();
+    try {
+      database.exec("INSERT INTO backup_runs (id,scheduled_for,status,claim_id,started_at,object_key) VALUES ('backup-1',1786554000,'pending','claim-1',1786554000,'daily/2026-08-13/1786554000.sql')");
+      expect(() => database.exec("INSERT INTO backup_runs (id,scheduled_for,status,claim_id,started_at,object_key) VALUES ('backup-2',1786554000,'pending','claim-2',1786554001,'daily/2026-08-13/duplicate.sql')")).toThrow();
+      expect(() => database.exec("INSERT INTO backup_runs (id,scheduled_for,status,claim_id,started_at) VALUES ('missing-intent',1786554002,'pending','claim-missing',1786554002)")).toThrow();
+      database.exec("UPDATE backup_runs SET status='completed',bookmark_hash='hash',etag='etag',size=12,completed_at=1786554010 WHERE id='backup-1'");
+      expect(() => database.exec("INSERT INTO backup_runs (id,scheduled_for,status,object_key,bookmark_hash,etag,size,completed_at) VALUES ('backup-3',1786554001,'completed','daily/2026-08-13/1786554000.sql','hash3','etag3',14,1786554012)")).toThrow();
+      expect(() => database.exec("INSERT INTO backup_runs (id,scheduled_for,status,object_key) VALUES ('backup-4',1786554002,'completed','daily/2026-08-13/1786554002.sql')")).toThrow();
+      expect(database.query("SELECT name FROM sqlite_master WHERE type='index' AND name='backup_runs_completed_at_idx'").get()).toEqual({ name: "backup_runs_completed_at_idx" });
+      expect(database.query("SELECT name FROM sqlite_master WHERE type='index' AND name='backup_runs_status_started_idx'").get()).toEqual({ name: "backup_runs_status_started_idx" });
+      expect(database.query("SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name='backup_runs'").all()).toEqual([]);
     } finally { database.close(); }
   });
 });

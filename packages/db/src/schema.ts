@@ -442,6 +442,33 @@ export const importSnapshots = sqliteTable(
   (table) => [index("import_snapshots_owner_expiry_idx").on(table.ownerUserId, table.expiresAt)],
 );
 
+/**
+ * A scheduled export first records a stable object-key intent and a short-lived claim.
+ * Never store raw bookmarks, signed URLs, tokens, or export contents.
+ */
+export const backupRuns = sqliteTable(
+  "backup_runs",
+  {
+    id: text("id").primaryKey(),
+    scheduledFor: integer("scheduled_for").notNull().unique(),
+    status: text("status", { enum: ["pending", "completed", "failed"] }).notNull().default("pending"),
+    claimId: text("claim_id").unique(),
+    startedAt: integer("started_at", { mode: "timestamp" }),
+    objectKey: text("object_key").notNull().unique(),
+    bookmarkHash: text("bookmark_hash"),
+    etag: text("etag"),
+    size: integer("size"),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+    failedAt: integer("failed_at", { mode: "timestamp" }),
+  },
+  (table) => [
+    check("backup_runs_status_check", sql`${table.status} IN ('pending', 'completed', 'failed')`),
+    check("backup_runs_completed_metadata_check", sql`${table.status} != 'completed' OR (${table.objectKey} IS NOT NULL AND ${table.bookmarkHash} IS NOT NULL AND ${table.etag} IS NOT NULL AND ${table.size} IS NOT NULL AND ${table.completedAt} IS NOT NULL)`),
+    index("backup_runs_completed_at_idx").on(table.completedAt),
+    index("backup_runs_status_started_idx").on(table.status, table.startedAt),
+  ],
+);
+
 /** Idempotency records are intentionally separate for normal CSV imports and annual rollover. */
 export const idempotencyOperations = sqliteTable(
   "idempotency_operations",

@@ -13,6 +13,17 @@
       "migrations_dir": "packages/db/drizzle"
     }
   ],
+  "r2_buckets": [
+    { "binding": "BACKUP_BUCKET", "bucket_name": "replace-with-daily-backup-r2-bucket" }
+  ],
+  "workflows": [
+    {
+      "name": "grade-management-daily-backup",
+      "binding": "DAILY_BACKUP_WORKFLOW",
+      "class_name": "DailyBackupWorkflow",
+      "schedules": ["0 17 * * *"]
+    }
+  ],
   "send_email": [
     {
       "name": "EMAIL",
@@ -23,7 +34,9 @@
     "BETTER_AUTH_URL": "http://localhost:5173",
     "BETTER_AUTH_TRUSTED_ORIGINS": "http://localhost:5173",
     "EMAIL_FROM": "no-reply@example.invalid",
-    "EMAIL_DELIVERY_ENABLED": "false"
+    "EMAIL_DELIVERY_ENABLED": "false",
+    "CLOUDFLARE_ACCOUNT_ID": "replace-with-cloudflare-account-id",
+    "D1_DATABASE_ID": "80c7cd4a-6501-48c0-92a0-c721aadd8d90"
   },
   "assets": {
     "not_found_handling": "single-page-application",

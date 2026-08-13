@@ -5,6 +5,7 @@ import {
   account,
   academicYears,
   auditLogs,
+  backupRuns,
   courses,
   gradeWeights,
   grades,
@@ -72,6 +73,9 @@ describe("grade-management schema", () => {
     expect(Object.keys(getTableColumns(auditLogs))).toEqual(expect.arrayContaining(["actorUserId", "action", "entityType"]));
     expect(Object.keys(getTableColumns(idempotencyOperations))).toEqual(
       expect.arrayContaining(["operationType", "idempotencyKey", "payloadHash", "resultJson"]),
+    );
+    expect(Object.keys(getTableColumns(backupRuns))).toEqual(
+      expect.arrayContaining(["scheduledFor", "status", "claimId", "startedAt", "objectKey", "bookmarkHash", "etag", "size", "completedAt", "failedAt"]),
     );
   });
 });

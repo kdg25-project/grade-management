@@ -53,9 +53,18 @@ bun run validate:production # 本番設定だけを安全に検査
 2. `wrangler d1 migrations apply grade-management --remote --config wrangler.jsonc`で**先に**remote D1 migrationを適用します。
 3. `wrangler secret put BETTER_AUTH_SECRET`で32文字以上のsecretを登録します。
 4. Cloudflare Email Sendingで送信domain/addressをonboardし、`EMAIL_FROM`・`send_email.allowed_sender_addresses`・`EMAIL_DELIVERY_ENABLED`を本番値へ更新します。Email Sendingの本番送信には適切なWorkers planが必要です。
-5. `bun run deploy:dry-run`を通し、`bun run validate:production`で本番用のURL・メール・D1 bindingを検査してから`bun run deploy`します。
+5. R2 bucketを作成し、`wrangler.jsonc`の`BACKUP_BUCKET`を実bucket名へ、`CLOUDFLARE_ACCOUNT_ID`と`D1_DATABASE_ID`を実値へ設定します。D1 APIを必要最小権限に絞ったtokenは `wrangler secret put D1_REST_API_TOKEN` で登録します。
+6. `bun run deploy:dry-run`を通し、`bun run validate:production`で本番用のURL・メール・D1/R2/Workflow bindingを検査してから`bun run deploy`します。
 
 `BETTER_AUTH_URL`と`BETTER_AUTH_TRUSTED_ORIGINS`は、本番ではlocalhostを含まないHTTPS originへ変更します。`EMAIL_FROM`は`.invalid`でない認証済みsenderにし、`send_email.allowed_sender_addresses`にも同じ値を登録、`EMAIL_DELIVERY_ENABLED=true`へ変更します。`bun run validate:production`はこれらとD1 IDを検査します。`BETTER_AUTH_SECRET`はWrangler secretのため設定ファイルからは検査できず、deploy前に `wrangler secret put BETTER_AUTH_SECRET` を確認してください。
+
+## 日次D1バックアップ
+
+`DailyBackupWorkflow` は毎日 `0 17 * * *`（UTC、JST翌日02:00）にCloudflare D1 export APIをpolling形式で実行し、R2へ `daily/YYYY-MM-DD/<scheduled Unix seconds>.sql` として保存します。R2 objectが既にある場合は再ダウンロードせず、D1には日時・object key・bookmark hash・etag・sizeだけを記録します。token、signed URL、raw bookmark、SQL内容はD1/ログへ保存しません。
+
+Cloudflare D1 Time Travelは短期の復旧手段（プランにより7日または30日）であり、日次R2 backupの代替ではありません。R2 lifecycleは**35〜45日程度を目安に運用担当が別途設定**してください。削除期間は未確定のため、このアプリはR2 object・`backup_runs`の削除を実装しません。
+
+復旧時は、(1) 対象R2 objectを確認、(2) 新しいD1 databaseへimport、(3) migrationとアプリを検証、(4) bindingを切り替える順に行います。既存D1への上書きrestoreは行いません。四半期ごとを目安にrestore drillを実施し、RTO 24時間以内の結果・証跡を運用記録へ残してください。
 
 Vite buildはStatic Assets directoryを生成Wrangler configへ注入し、rootの`.wrangler/deploy/config.json`へredirectも作成します。そのためCloudflare Workers Buildsは以下で構成します。
 

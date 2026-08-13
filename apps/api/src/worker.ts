@@ -1,8 +1,10 @@
 import { createWorkerApp } from "./app";
-import type { AuthEnvironment } from "./auth";
+import { DailyBackupWorkflow, type BackupEnvironment } from "./backup/daily-backup";
+
+export { DailyBackupWorkflow };
 
 export default {
-  fetch(request, env: AuthEnvironment, ctx) {
+  fetch(request, env: BackupEnvironment, ctx) {
     return createWorkerApp(env, ctx).fetch(request);
   },
-} satisfies ExportedHandler<AuthEnvironment>;
+} satisfies ExportedHandler<BackupEnvironment>;
