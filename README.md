@@ -10,7 +10,7 @@ Cloudflare Workers Static Assets、Hono、D1、Better Auth、Vite React SPAをBu
 - 年度更新ウィザード、個別通常CSV取込、成績CSV出力
 - owner-bound TTL snapshot、D1 batch、idempotency keyによる一括処理保護
 
-PDFの帳票レイアウトは未確定のため、PDF出力は実装・固定していません。
+PDF出力の要否と帳票レイアウトは仕様選定待ちのため、PDF出力は実装・固定していません。
 
 ## ローカル開発
 
@@ -23,11 +23,13 @@ bun run dev:seed       # 任意: 画面確認用fixtureをlocal D1へ作成
 bun run dev
 ```
 
+`.dev.vars`はCloudflare Vite pluginが読み込み、`wrangler.jsonc`の本番varsをローカル専用値で上書きします。テンプレートにはlocalhostのBetter Auth URL/trusted origin、`no-reply@example.invalid`、`EMAIL_DELIVERY_ENABLED=false`を設定済みです。`BETTER_AUTH_SECRET`だけをローカル専用の32文字以上の値に変更してください。
+
 `http://localhost:5173`を開きます。開発serverでは`/api/health`、`/apiary`、`/teacher/subjects`のようなdeep SPA routeも確認できます。`dev:seed`は**local D1専用**で、初回だけ開発admin/teacherの一時パスワードを出力します。2回目以降は既存アカウントを保持し、パスワードを再表示しません。共有環境やremote D1には使用できません。
 
 `admin:create`と`dev:seed`はVite開発serverと同じlocal D1を操作します。SQLite lockを避けるため、実行時は`bun run dev`を停止してください。
 
-ローカルでは`EMAIL_DELIVERY_ENABLED=false`です。再設定メールは送信せず、メール本文・URL・tokenをログに出力しません。
+ローカルでは`EMAIL_DELIVERY_ENABLED=false`です。パスワード再設定要求は送信成功と同じ経路でシミュレートされますが、実メールは送信せず、メール本文・URL・tokenをログに出力しません。
 
 ## コマンド
 
@@ -59,20 +61,19 @@ bun run e2e:test
 
 実アカウントを変更するコマンドはCIまたは運用担当者だけが実行してください。
 
-1. `wrangler d1 create grade-management`後、表示されたIDを`wrangler.jsonc`へ設定します。
-2. `wrangler d1 migrations apply grade-management --remote --config wrangler.jsonc`で**先に**remote D1 migrationを適用します。
-3. `wrangler secret put BETTER_AUTH_SECRET`で32文字以上のsecretを登録します。
-4. Cloudflare Email Sendingで送信domain/addressをonboardし、`EMAIL_FROM`・`send_email.allowed_sender_addresses`・`EMAIL_DELIVERY_ENABLED`を本番値へ更新します。Email Sendingの本番送信には適切なWorkers planが必要です。
-5. R2 bucketを作成し、`wrangler.jsonc`の`BACKUP_BUCKET`を実bucket名へ、`CLOUDFLARE_ACCOUNT_ID`と`D1_DATABASE_ID`を実値へ設定します。D1 APIを必要最小権限に絞ったtokenは `wrangler secret put D1_REST_API_TOKEN` で登録します。
-6. `bun run deploy:dry-run`を通し、`bun run validate:production`で本番用のURL・メール・D1/R2/Workflow bindingを検査してから`bun run deploy`します。
+`wrangler.jsonc`には本番Worker origin（`https://grade-management.tah5882.workers.dev`）、認証済み送信元（`no-reply@grade-management.tah5882.dev`）、Email Sending有効化、Cloudflare account、既存D1 ID、R2 bucket（`grade-management-backups`）を設定済みです。remote D1にはmigration `0001`〜`0009`を適用済みで、migration前のR2 backup objectも確認済みです。`BETTER_AUTH_SECRET`は登録済みsecretであり、設定ファイルには保存しません。
 
-`BETTER_AUTH_URL`と`BETTER_AUTH_TRUSTED_ORIGINS`は、本番ではlocalhostを含まないHTTPS originへ変更します。`EMAIL_FROM`は`.invalid`でない認証済みsenderにし、`send_email.allowed_sender_addresses`にも同じ値を登録、`EMAIL_DELIVERY_ENABLED=true`へ変更します。`bun run validate:production`はこれらとD1 IDを検査します。`BETTER_AUTH_SECRET`はWrangler secretのため設定ファイルからは検査できず、deploy前に `wrangler secret put BETTER_AUTH_SECRET` を確認してください。
+`D1_REST_API_TOKEN`は未登録で、安全な作成が保留中です。このtokenがない間にD1 exportが失敗しないよう、`DailyBackupWorkflow`のbinding/classは維持しつつ自動scheduleを無効化しています。
+
+1. Cloudflare dashboardで、account scopeのD1 Read権限だけを持つAccount API Tokenを作成します。
+2. 運用担当者が `wrangler secret put D1_REST_API_TOKEN` でtokenを登録します。
+3. `wrangler.jsonc`の`DAILY_BACKUP_WORKFLOW`に `"schedules": ["0 17 * * *"]` を戻し、`bun run deploy:dry-run`と`bun run validate:production`を通してからdeployします。
 
 ## 日次D1バックアップ
 
-`DailyBackupWorkflow` は毎日 `0 17 * * *`（UTC、JST翌日02:00）にCloudflare D1 export APIをpolling形式で実行し、R2へ `daily/YYYY-MM-DD/<scheduled Unix seconds>.sql` として保存します。R2 objectが既にある場合は再ダウンロードせず、D1には日時・object key・bookmark hash・etag・sizeだけを記録します。token、signed URL、raw bookmark、SQL内容はD1/ログへ保存しません。
+`DailyBackupWorkflow` はD1 export APIをpolling形式で実行し、R2へ `daily/YYYY-MM-DD/<scheduled Unix seconds>.sql` として保存します。R2 objectが既にある場合は再ダウンロードせず、D1には日時・object key・bookmark hash・etag・sizeだけを記録します。token、signed URL、raw bookmark、SQL内容はD1/ログへ保存しません。現在は`D1_REST_API_TOKEN`未登録のためscheduleを無効化しており、上記のtoken登録後に毎日 `0 17 * * *`（UTC、JST翌日02:00）へ戻します。
 
-Cloudflare D1 Time Travelは短期の復旧手段（プランにより7日または30日）であり、日次R2 backupの代替ではありません。R2 lifecycleは**35〜45日程度を目安に運用担当が別途設定**してください。削除期間は未確定のため、このアプリはR2 object・`backup_runs`の削除を実装しません。
+Cloudflare D1 Time Travelは短期の復旧手段（プランにより7日または30日）であり、日次R2 backupの代替ではありません。R2 backupの30年保管方針はユーザー判断により保留中です。R2 lifecycleと削除期間は運用担当が別途決定し、このアプリはR2 object・`backup_runs`の削除を実装しません。
 
 復旧時は、(1) 対象R2 objectを確認、(2) 新しいD1 databaseへimport、(3) migrationとアプリを検証、(4) bindingを切り替える順に行います。既存D1への上書きrestoreは行いません。四半期ごとを目安にrestore drillを実施し、RTO 24時間以内の結果・証跡を運用記録へ残してください。
 

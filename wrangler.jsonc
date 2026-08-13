@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "grade-management",
+  "account_id": "94d3dbf7dc882ee2814ab1225e33a8ca",
   "main": "./apps/api/src/worker.ts",
   "compatibility_date": "2026-08-08",
   "compatibility_flags": ["nodejs_compat"],
@@ -14,28 +15,27 @@
     }
   ],
   "r2_buckets": [
-    { "binding": "BACKUP_BUCKET", "bucket_name": "replace-with-daily-backup-r2-bucket" }
+    { "binding": "BACKUP_BUCKET", "bucket_name": "grade-management-backups" }
   ],
   "workflows": [
     {
       "name": "grade-management-daily-backup",
       "binding": "DAILY_BACKUP_WORKFLOW",
-      "class_name": "DailyBackupWorkflow",
-      "schedules": ["0 17 * * *"]
+      "class_name": "DailyBackupWorkflow"
     }
   ],
   "send_email": [
     {
       "name": "EMAIL",
-      "allowed_sender_addresses": ["no-reply@example.invalid"]
+      "allowed_sender_addresses": ["no-reply@grade-management.tah5882.dev"]
     }
   ],
   "vars": {
-    "BETTER_AUTH_URL": "http://localhost:5173",
-    "BETTER_AUTH_TRUSTED_ORIGINS": "http://localhost:5173",
-    "EMAIL_FROM": "no-reply@example.invalid",
-    "EMAIL_DELIVERY_ENABLED": "false",
-    "CLOUDFLARE_ACCOUNT_ID": "replace-with-cloudflare-account-id",
+    "BETTER_AUTH_URL": "https://grade-management.tah5882.workers.dev",
+    "BETTER_AUTH_TRUSTED_ORIGINS": "https://grade-management.tah5882.workers.dev",
+    "EMAIL_FROM": "no-reply@grade-management.tah5882.dev",
+    "EMAIL_DELIVERY_ENABLED": "true",
+    "CLOUDFLARE_ACCOUNT_ID": "94d3dbf7dc882ee2814ab1225e33a8ca",
     "D1_DATABASE_ID": "80c7cd4a-6501-48c0-92a0-c721aadd8d90"
   },
   "assets": {

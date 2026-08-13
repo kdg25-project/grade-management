@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-type Config = { vars?: Record<string, unknown>; d1_databases?: unknown; send_email?: unknown; r2_buckets?: unknown; workflows?: unknown };
+type Config = { account_id?: unknown; vars?: Record<string, unknown>; d1_databases?: unknown; send_email?: unknown; r2_buckets?: unknown; workflows?: unknown };
 
 /** Removes JSONC comments without touching URL-like strings. Wrangler configs need no broader parser. */
 export const stripJsoncComments = (source: string) => {
@@ -79,10 +79,13 @@ export const productionConfigErrors = (config: unknown) => {
   if (placeholderD1(configuredDatabaseId) || !d1.some((database) => database?.database_id === configuredDatabaseId)) errors.push("D1_DATABASE_ID must match a configured D1 database_id");
   const accountId = typeof vars?.CLOUDFLARE_ACCOUNT_ID === "string" ? vars.CLOUDFLARE_ACCOUNT_ID.trim() : "";
   if (placeholderD1(accountId)) errors.push("CLOUDFLARE_ACCOUNT_ID must be configured and not a placeholder");
+  const configuredAccountId = typeof source?.account_id === "string" ? source.account_id.trim() : "";
+  if (placeholderD1(configuredAccountId)) errors.push("account_id must be configured and not a placeholder");
+  else if (configuredAccountId !== accountId) errors.push("account_id must match CLOUDFLARE_ACCOUNT_ID");
   const buckets = Array.isArray(source?.r2_buckets) ? source.r2_buckets.map(record) : [];
   if (!buckets.some((bucket) => bucket?.binding === "BACKUP_BUCKET" && typeof bucket.bucket_name === "string" && !placeholderD1(bucket.bucket_name.trim()))) errors.push("BACKUP_BUCKET must use a non-placeholder R2 bucket");
   const workflows = Array.isArray(source?.workflows) ? source.workflows.map(record) : [];
-  if (!workflows.some((workflow) => workflow?.binding === "DAILY_BACKUP_WORKFLOW" && workflow.class_name === "DailyBackupWorkflow" && Array.isArray(workflow.schedules) && workflow.schedules.includes("0 17 * * *"))) errors.push("Daily backup Workflow schedule must be configured");
+  if (!workflows.some((workflow) => workflow?.binding === "DAILY_BACKUP_WORKFLOW" && workflow.class_name === "DailyBackupWorkflow")) errors.push("Daily backup Workflow binding must be configured");
   const emailBindings = Array.isArray(source?.send_email) ? source.send_email.map(record) : [];
   const senderAllowed = emailBindings.some((binding) => Array.isArray(binding?.allowed_sender_addresses) && binding.allowed_sender_addresses.some((value) => value === sender));
   if (!senderAllowed) errors.push("send_email.allowed_sender_addresses must include EMAIL_FROM");

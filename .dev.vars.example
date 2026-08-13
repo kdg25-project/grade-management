@@ -1,2 +1,6 @@
 # Do not commit .dev.vars. Use a unique local-only secret.
 BETTER_AUTH_SECRET=replace-with-a-random-secret-at-least-32-characters-long
+BETTER_AUTH_URL=http://localhost:5173
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:5173
+EMAIL_FROM=no-reply@example.invalid
+EMAIL_DELIVERY_ENABLED=false
