@@ -7,10 +7,10 @@ Cloudflare Workers Static Assets、Hono、D1、Better Auth、Vite React SPAをBu
 - Better Authによる専任職員・講師ログイン、初回パスワード変更、リセット、単一セッション
 - 講師の担当科目・現在学期の成績入力、正確な整数分子による評価計算
 - 専任職員による年度/学生/講師/科目管理、学期確定・再開、監査履歴
-- 年度更新ウィザード、個別通常CSV取込、成績CSV出力
+- 年度更新ウィザード、個別通常CSV取込、成績CSV/PDF出力
 - owner-bound TTL snapshot、D1 batch、idempotency keyによる一括処理保護
 
-PDF出力の要否と帳票レイアウトは仕様選定待ちのため、PDF出力は実装・固定していません。
+PDF出力はCloudflare Browser Runの`BROWSER` bindingで実装済みです。A4横向きの帳票を生成し、確認時点のowner-bound TTL snapshotを一度だけ出力します。
 
 ## ローカル開発
 
@@ -53,7 +53,7 @@ bun run e2e:test
 
 このコマンドは、通常の開発用D1とは別の`apps/web/.wrangler/e2e-state`だけを削除・再作成し、migrationと最小fixtureを適用してから、Chromiumでログイン、初回パスワード変更、成績保存、学期確定・再開を順番に確認します。実行中は`4173`番ポートを専有するため、同じポートのserverを止めてください。生成される`.dev.vars.e2e`と`e2e/.credentials.json`はgit ignoreされ、E2E用の一時secret/パスワードを含みます。
 
-このsmokeはローカルWorkerとD1の回帰検知用です。通常画面応答3秒・成績反映10秒をローカルで確認しますが、本番のSLA証跡ではありません。PDF仕様は未確定のため、PDF生成のE2Eは意図的に含めていません。
+このsmokeはローカルWorkerとD1の回帰検知用です。通常画面応答3秒・成績反映10秒をローカルで確認しますが、本番のSLA証跡ではありません。PDFはBrowser Run bindingを利用するため、ローカルE2Eには含めていません。
 
 `bun run deploy:dry-run`はbuild後に生成されるWrangler redirectを使います。`wrangler.jsonc`や生成configを直接指定せず、このscriptを使ってください。
 
@@ -61,9 +61,10 @@ bun run e2e:test
 
 実アカウントを変更するコマンドはCIまたは運用担当者だけが実行してください。
 
-`wrangler.jsonc`には本番Worker origin（`https://grade-management.tah5882.workers.dev`）、認証済み送信元（`no-reply@grade-management.tah5882.dev`）、Email Sending有効化、Cloudflare account、既存D1 ID、R2 bucket（`grade-management-backups`）を設定済みです。remote D1にはmigration `0001`〜`0009`を適用済みで、migration前のR2 backup objectも確認済みです。`BETTER_AUTH_SECRET`は登録済みsecretであり、設定ファイルには保存しません。
+`wrangler.jsonc`には本番Worker origin（`https://grade-management.tah5882.workers.dev`）、認証済み送信元（`no-reply@grade-management.tah5882.dev`）、Email Sending有効化、Cloudflare account、既存D1 ID、R2 bucket（`grade-management-backups`）を設定済みです。remote D1にはmigration `0000`〜`0011`を適用済みで、migration前のR2 backup objectも確認済みです。`BETTER_AUTH_SECRET`は登録済みsecretであり、設定ファイルには保存しません。
 
 `D1_REST_API_TOKEN`は未登録で、安全な作成が保留中です。このtokenがない間にD1 exportが失敗しないよう、`DailyBackupWorkflow`のbinding/classは維持しつつ自動scheduleを無効化しています。
+通常の成績管理画面やD1バインディングによる読み書きに、このtokenは必要ありません。日次D1バックアップのscheduleを有効化する場合だけ必要です。
 
 1. Cloudflare dashboardで、account scopeのD1 Read権限だけを持つAccount API Tokenを作成します。
 2. 運用担当者が `wrangler secret put D1_REST_API_TOKEN` でtokenを登録します。
@@ -104,7 +105,7 @@ bun run admin:create -- --name "成績管理担当" --email staff@example.com --
 
 CSV取込で新規利用者を作る場合、一時パスワードは成功レスポンス/画面で**一度だけ**返ります。監査、idempotency result、snapshotには保存しません。通信切断などで受領に失敗した場合は、既存の管理者によるパスワード再設定手順で対応してください。画面表示した一時パスワードCSVは安全な場所へ保存し、端末に残さないでください。
 
-成績出力は、年度・全学生、直近3年度、前年度、確定済み累計3年度、年度・学期別の5パターンと専攻・学年・科目の絞り込みを共通で使います。確定済みの最新受験成績行だけを対象にし、確認時点のowner-bound TTL snapshotをCSVまたはPDFで一度だけ出力します。CSVは10,000行・5MBで上限を設け、Excel formula injectionを防ぐエスケープを行います。PDFはCloudflare Browser Runの`BROWSER` bindingが必要で、ローカル開発ではQuick Actionを利用できないためモック検証のみを行い、deploy後に本番環境で出力確認してください。
+成績出力は、年度・全学生、直近3年度、前年度、確定済み累計3年度、年度・学期別の5パターンと専攻・学年・科目の絞り込みを共通で使います。確定済みの最新受験成績行だけを対象にし、確認時点のowner-bound TTL snapshotをCSVまたはPDFで一度だけ出力します。CSVは10,000行・5MBで上限を設け、Excel formula injectionを防ぐエスケープを行います。PDFはCloudflare Browser Runの`BROWSER` bindingでA4横向きに生成します。remote Browser Runでの実PDF smokeは2.632秒でしたが、本番SLAの証跡ではありません。ローカル開発ではQuick Actionを利用できないためモック検証のみを行い、deploy後に本番環境で出力確認してください。
 
 ## バックアップ・復旧
 
