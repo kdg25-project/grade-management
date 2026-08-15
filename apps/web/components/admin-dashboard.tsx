@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { FolderPlus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
@@ -7,6 +7,7 @@ import { destinationForApiError, GradeApiError, finalizeSubject, getAdminSubject
 import { isCurrentRequest } from "@/lib/request-generation";
 import { canPerformDesktopAction, mobileReadOnlyMessage, useMobileReadOnly } from "@/lib/mobile-read-only";
 import { TeacherShell } from "@/components/teacher-shell";
+import { emptyDashboardActions } from "@/lib/admin-dashboard-model";
 
 const termLabel = (term: Term) => term === 1 ? "前期" : "後期";
 const yearOptions = (current: number) => Array.from({ length: 4 }, (_, index) => current - index);
@@ -45,14 +46,14 @@ export function AdminDashboard() {
     try { await reopenSubject(subject.id, term, reason.trim()); setNotice(`${subject.name}の${termLabel(term)}を再開しました。`); await load(); } catch (nextError) { setNotice(nextError instanceof GradeApiError ? nextError.message : "再開処理に失敗しました。"); } finally { setPending(null); }
   }
 
-  return <TeacherShell variant="admin"><header className="pageHeader"><p className="sectionEyebrow">専任職員</p><h1>成績管理ダッシュボード</h1><p>前期を確定すると、講師の入力対象が後期へ切り替わります。確定・再開は科目ごとに行います。</p><p><Link to="/admin/grades">成績を検索・修正する</Link></p></header>
+  return <TeacherShell variant="admin"><header className="pageHeader dashboardHeader"><div><p className="sectionEyebrow">専任職員</p><h1>成績管理ダッシュボード</h1><p>年度と科目を確認して、学期ごとの成績確定を進めます。</p></div><Link className="secondaryAction compactAction headerAction" to="/admin/grades">成績を検索・修正</Link></header>
     {mobile ? <p className="readOnlyNotice">{mobileReadOnlyMessage} 成績の確定・再開はできません。</p> : null}
-    <section className="yearToolbar" aria-label="年度を選択"><label htmlFor="admin-year">表示年度</label><select id="admin-year" value={selectedYear} onChange={(event) => navigate(`/admin?year=${event.target.value}`)} disabled={loading && !data}>{yearOptions(data?.currentAcademicYear ?? selectedYear).map((option) => <option key={option} value={option}>{option}年度</option>)}</select><span className="toolbarHint">操作は現在年度のみ有効です。</span></section>
-    <p className="termOrderNotice" role="note"><strong>確定の順番：</strong>前期を確認・確定してから、後期を確認・確定してください。</p>
+    <section className="yearToolbar" aria-labelledby="admin-year-heading"><div className="yearToolbarIntro"><p className="sectionEyebrow">対象年度</p><h2 id="admin-year-heading">表示する年度を選択</h2><p>成績の確定・再開は現在年度のみで行えます。</p></div><div className="yearSelector"><label htmlFor="admin-year">表示年度</label><select id="admin-year" value={selectedYear} onChange={(event) => navigate(`/admin?year=${event.target.value}`)} disabled={loading && !data}>{yearOptions(data?.currentAcademicYear ?? selectedYear).map((option) => <option key={option} value={option}>{option}年度</option>)}</select></div></section>
+    <section className="termGuide" aria-labelledby="term-guide-heading"><div><p className="sectionEyebrow">確定の流れ</p><h2 id="term-guide-heading">前期から順に確認します</h2></div><ol><li><span>1</span><div><strong>入力状況を確認</strong><p>未入力の学生がいないか確認します。</p></div></li><li><span>2</span><div><strong>前期を確定</strong><p>確定後は講師が編集できません。</p></div></li><li><span>3</span><div><strong>後期を確認・確定</strong><p>前期確定後に後期の入力が始まります。</p></div></li></ol></section>
     {notice ? <p className="formSuccess" role="status">{notice}</p> : null}
     {loading ? <p className="loadingMessage" role="status">科目の確定状況を読み込んでいます…</p> : null}
     {error ? <section className="errorPanel" role="alert"><strong>ダッシュボードを読み込めませんでした</strong><p>{error instanceof GradeApiError ? error.message : "通信状況を確認してください。"}</p><button className="secondaryAction compactAction" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />再読み込み</button></section> : null}
-    {!loading && !error && data?.subjects.length === 0 ? <section className="emptyPanel"><strong>この年度の科目はありません</strong><p>年度を切り替えて確認してください。</p></section> : null}
+    {!loading && !error && data?.subjects.length === 0 ? <section className="emptyPanel dashboardEmptyPanel"><FolderPlus aria-hidden="true" /><div><h2>この年度には科目がまだ登録されていません</h2><p>科目を登録すると、担当講師の成績入力と学期ごとの確定を開始できます。</p><div className="emptyActions">{emptyDashboardActions.map((action) => <Link className={`${action.tone}Action compactAction`} key={action.to} to={action.to}>{action.label}</Link>)}</div></div></section> : null}
     {!loading && !error && data?.subjects.length ? <section className="adminSubjectList" aria-label="科目別の確定状況">{data.subjects.map((subject) => <article className="adminSubjectCard" key={subject.id}><div><p className="sectionEyebrow">{subject.gradeLevel}年生</p><h2>{subject.name}</h2></div><div className="adminTerms">{([1, 2] as Term[]).map((term) => { const status = subject.termStatuses.find((item) => item.term === term)?.isFinalized ?? false; const completion = subject.completion[term]; const actionKey = `${subject.id}-${term}`; const actionLabel = `${subject.name}の${termLabel(term)}を${status ? "再開" : "確定"}する`; return <div className="adminTerm" key={term}><div><strong>{termLabel(term)}</strong><span>{status ? "確定済み" : `${completion.complete} / ${completion.eligible}名入力済み`}</span></div>{subject.academicYear === data.currentAcademicYear ? <div className="adminActions">{status ? <button className="secondaryAction compactAction" aria-label={actionLabel} disabled={mobile || pending === actionKey} type="button" onClick={() => void reopen(subject, term)}>再開する</button> : <button className="primaryAction compactAction" aria-label={actionLabel} disabled={mobile || pending === actionKey} type="button" onClick={() => void finalize(subject, term)}>{pending === actionKey ? "処理中…" : "確定する"}</button>}</div> : null}</div>; })}</div></article>)}</section> : null}
   </TeacherShell>;
 }
