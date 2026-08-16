@@ -1,12 +1,12 @@
 "use client";
 
 import { Eye, EyeOff, LoaderCircle } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
-import { destinationForUser } from "@/lib/session-routing";
+import { destinationForSignedInUser } from "@/lib/login-routing";
 
 export function LoginForm() {
   const navigate = useNavigate();
@@ -14,30 +14,75 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirmingSession, setIsConfirmingSession] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const submissionInFlight = useRef(false);
+  const sessionConfirmationInFlight = useRef(false);
+  const hasNavigated = useRef(false);
+  const { data: session, error: sessionError, isPending: isSessionPending, isRefetching, refetch } = authClient.useSession();
+
+  useEffect(() => {
+    if (!isConfirmingSession || !sessionConfirmationInFlight.current || hasNavigated.current) return;
+    if (isSessionPending || isRefetching) return;
+
+    if (sessionError || !session) {
+      sessionConfirmationInFlight.current = false;
+      submissionInFlight.current = false;
+      setIsConfirmingSession(false);
+      setIsSubmitting(false);
+      setErrorMessage("ログイン情報を確認できませんでした。もう一度お試しください。");
+      return;
+    }
+
+    const destination = destinationForSignedInUser(session.user);
+    if (!destination) {
+      sessionConfirmationInFlight.current = false;
+      submissionInFlight.current = false;
+      setIsConfirmingSession(false);
+      setIsSubmitting(false);
+      setErrorMessage("ログイン情報を確認できませんでした。もう一度お試しください。");
+      return;
+    }
+
+    hasNavigated.current = true;
+    sessionConfirmationInFlight.current = false;
+    navigate(destination, { replace: true });
+  }, [isConfirmingSession, isRefetching, isSessionPending, navigate, session, sessionError]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionInFlight.current) return;
+
+    submissionInFlight.current = true;
+    hasNavigated.current = false;
     setErrorMessage("");
     setIsSubmitting(true);
 
     try {
-      const { error } = await authClient.signIn.email({ email, password });
+      const { data, error } = await authClient.signIn.email({ email, password });
 
       if (error) {
         setErrorMessage("メールアドレスまたはパスワードを確認してください。");
+        submissionInFlight.current = false;
+        setIsSubmitting(false);
         return;
       }
 
-      const session = await authClient.getSession();
-      if (!session.data) {
+      if (!destinationForSignedInUser(data?.user)) {
         setErrorMessage("ログイン情報を確認できませんでした。もう一度お試しください。");
+        submissionInFlight.current = false;
+        setIsSubmitting(false);
         return;
       }
-      navigate(destinationForUser(session.data.user), { replace: true });
+
+      // Refetch while this hook remains mounted. Better Auth aborts the
+      // pre-login request, so ProtectedRoute cannot consume its stale null.
+      sessionConfirmationInFlight.current = true;
+      void refetch();
+      setIsConfirmingSession(true);
     } catch {
       setErrorMessage("ログインできませんでした。時間をおいてもう一度お試しください。");
-    } finally {
+      submissionInFlight.current = false;
       setIsSubmitting(false);
     }
   }

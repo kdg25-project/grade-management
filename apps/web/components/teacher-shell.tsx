@@ -1,10 +1,12 @@
 "use client";
 
-import { BookMarked, BookOpenCheck, CalendarCog, ClipboardPenLine, Download, History, Menu as MenuIcon, RotateCcw, ShieldCheck, Upload, UserCog, UserRoundPlus, Users, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpenCheck, CalendarCog, ClipboardPenLine, Download, History, LogOut, Menu as MenuIcon, RotateCcw, ShieldCheck, Upload, UserCog, UserRoundPlus, Users, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { adminNavigationGroups, isNavigationCurrent, teacherNavigationGroups, type NavigationItem } from "@/lib/navigation-model";
+import { authClient } from "@/lib/auth-client";
+import { logoutErrorMessage, logoutFailureMessage, shouldStartLogout } from "@/lib/logout-state";
 
 type NavigationGuard = () => boolean;
 type ShellVariant = "teacher" | "admin";
@@ -69,14 +71,36 @@ function GroupedNavigation({ onNavigate, navigationGuard, variant }: Readonly<{ 
 
 export function TeacherShell({ children, variant = "teacher", navigationGuard }: Readonly<{ children: React.ReactNode; variant?: ShellVariant; navigationGuard?: NavigationGuard }>) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
   const appBodyRef = useRef<HTMLDivElement>(null);
   const wasMenuOpen = useRef(false);
+  const navigate = useNavigate();
   const menuLabel = variant === "admin" ? "専任職員メニュー" : "講師メニュー";
   const roleContext = variant === "admin" ? "専任職員用" : "講師用";
   const closeMenu = () => setIsMenuOpen(false);
+  const handleLogout = async () => {
+    if (!shouldStartLogout(isLoggingOut, navigationGuard ?? (() => true))) return;
+    setLogoutError(null);
+    setIsLoggingOut(true);
+    try {
+      const result = await authClient.signOut();
+      const errorMessage = logoutErrorMessage(result);
+      if (errorMessage) {
+        setLogoutError(errorMessage);
+        return;
+      }
+      closeMenu();
+      navigate("/login", { replace: true });
+    } catch {
+      setLogoutError(logoutFailureMessage);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -144,6 +168,13 @@ export function TeacherShell({ children, variant = "teacher", navigationGuard }:
           </span>
         </Link>
         <p className="appRoleContext">{roleContext}</p>
+        <div className="headerLogoutArea">
+          {logoutError ? <p className="logoutError" role="alert">{logoutError}</p> : null}
+          <button className="logoutAction headerLogout" type="button" disabled={isLoggingOut} onClick={() => void handleLogout()}>
+            <LogOut aria-hidden="true" />
+            {isLoggingOut ? "ログアウト中…" : "ログアウト"}
+          </button>
+        </div>
         <button
           ref={menuButtonRef}
           className="menuButton"
@@ -164,6 +195,13 @@ export function TeacherShell({ children, variant = "teacher", navigationGuard }:
             <button ref={mobileCloseButtonRef} className="mobileNavClose" type="button" aria-label="メニューを閉じる" onClick={closeMenu}><X aria-hidden="true" /></button>
           </div>
           <GroupedNavigation variant={variant} navigationGuard={navigationGuard} onNavigate={closeMenu} />
+          <div className="mobileLogoutArea">
+            {logoutError ? <p className="logoutError" role="alert">{logoutError}</p> : null}
+            <button className="logoutAction mobileLogout" type="button" disabled={isLoggingOut} onClick={() => void handleLogout()}>
+              <LogOut aria-hidden="true" />
+              {isLoggingOut ? "ログアウト中…" : "ログアウト"}
+            </button>
+          </div>
         </nav>
       ) : null}
       <div ref={appBodyRef} className="appBody">

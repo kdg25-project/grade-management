@@ -103,6 +103,28 @@ async function getAuthenticatedJson(page: Page, path: string) {
 test.describe("grade-management local smoke", () => {
   test.describe.configure({ mode: "serial" });
 
+  test("signs in once after confirming the refreshed session", async ({ page }) => {
+    const credentials = await readCredentials();
+
+    // Activate this fixture account first, then begin the assertion logged out.
+    await signIn(page, credentials.admin);
+    await changeInitialPassword(page, credentials.admin.password, credentials.admin.changedPassword);
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.context().clearCookies();
+    await page.goto("/login");
+
+    let signInPosts = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().includes("/api/auth/sign-in/email")) signInPosts += 1;
+    });
+
+    await signIn(page, { email: credentials.admin.email, password: credentials.admin.changedPassword });
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.waitForTimeout(750);
+    await expect(page).toHaveURL(/\/admin$/);
+    expect(signInPosts).toBe(1);
+  });
+
   test("protects routes and persists grades through finalization and reopen", async ({ page }) => {
     const credentials = await readCredentials();
     const protectedStart = performance.now();
