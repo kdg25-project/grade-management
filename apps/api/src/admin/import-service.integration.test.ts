@@ -58,6 +58,49 @@ describe("individual normal CSV imports (SQLite)", () => {
     expect(() => parseImport(input("subjects", subjectCsv()))).toThrow("対象学年");
     expect(() => parseImport(input("students", studentCsv(), 1))).toThrow("対象学年");
   });
+  it("reports exact physical rows and fields and creates neither a preview token nor domain mutations for an invalid mixed student CSV", async () => {
+    const { database, service } = setup();
+    const invalid = studentCsv("S-002").replace("student@example.test", "not-an-email");
+    const [header, validRow] = studentCsv("S-001").trim().split("\r\n");
+    const invalidRow = invalid.trim().split("\r\n")[1]!;
+    const csv = `${header}\r\n\r\n${validRow}\r\n${invalidRow}\r\n`;
+    const preview = await service.preview("admin", input("students", csv));
+    expect(preview.token).toBeUndefined();
+    expect(preview.errors).toContainEqual({ file: "学生CSV", row: 4, field: "メールアドレス", reason: "メールアドレスを正しく入力してください。" });
+    expect(database.query("SELECT count(*) AS count FROM import_snapshots").get()).toEqual({ count: 0 });
+    expect(database.query("SELECT count(*) AS count FROM students").get()).toEqual({ count: 0 });
+    expect(database.query("SELECT count(*) AS count FROM user WHERE id!='admin'").get()).toEqual({ count: 0 });
+    expect(database.query("SELECT count(*) AS count FROM subjects").get()).toEqual({ count: 0 });
+    expect(database.query("SELECT count(*) AS count FROM idempotency_operations").get()).toEqual({ count: 0 });
+  });
+  it("identifies the later duplicate row without exposing the duplicated value", () => {
+    const duplicate = `${studentCsv("S-001").trim()}\r\nS-001,学生二郎,がくせいじろう,21,2004年11月19日,男,student-two@example.test,090,100-0001,東京都,システムエンジニア\r\n`;
+    expect(parseImport(input("students", duplicate)).errors).toContainEqual({ file: "学生CSV", row: 3, field: "学籍番号", reason: "CSV内で重複しています（最初の記載: 2行目）。" });
+  });
+  it("does not create snapshots or records for malformed, invalid-header, or invalid-column-count CSVs", async () => {
+    const { database, service } = setup();
+    for (const csv of ["学籍番号,氏名,氏名（ひらがな）,年齢,生年月日,性別,メールアドレス,電話番号,郵便番号,住所,専攻\r\nS-001,学生一郎\r\n", "別の見出し\r\nS-001\r\n", "学籍番号,氏名,氏名（ひらがな）,年齢,生年月日,性別,メールアドレス,電話番号,郵便番号,住所,専攻\r\nS-001,\"学生一郎\r\n"]) {
+      expect((await service.preview("admin", input("students", csv))).token).toBeUndefined();
+    }
+    expect(database.query("SELECT count(*) AS count FROM import_snapshots").get()).toEqual({ count: 0 });
+    expect(database.query("SELECT count(*) AS count FROM students").get()).toEqual({ count: 0 });
+  });
+  it("returns CSV rows for existing student mismatches, ambiguous teachers, and locked subjects", async () => {
+    const existing = setup();
+    existing.database.exec("INSERT INTO students VALUES('stored','S-STORED','既存','きそん','2004-11-19','男','stored@example.test','','','','system-engineer',2027,'enrolled',0,'admin',0,0)");
+    const mismatch = await existing.service.preview("admin", input("students", studentCsv("S-OTHER").replace("student@example.test", "stored@example.test")));
+    expect(mismatch.errors).toContainEqual(expect.objectContaining({ file: "学生CSV", row: 2, field: "メールアドレス" }));
+
+    const ambiguous = setup();
+    ambiguous.database.exec("INSERT INTO user VALUES('teacher-one','講師一郎','one@example.test','teacher','active',0,0,0),('teacher-two','講師一郎','two@example.test','teacher','active',0,0,0)");
+    const ambiguousPreview = await ambiguous.service.preview("admin", input("subjects", subjectCsv(), 2));
+    expect(ambiguousPreview.errors).toContainEqual(expect.objectContaining({ file: "2年科目CSV", row: 2, field: "担当講師" }));
+
+    const locked = setup();
+    locked.database.exec("INSERT INTO user VALUES('teacher','講師一郎','teacher@example.test','teacher','active',0,0,0); INSERT INTO subjects VALUES('subject',2027,'基礎情報',2,'teacher',0,0); INSERT INTO grades VALUES('grade','subject')");
+    const lockedPreview = await locked.service.preview("admin", input("subjects", subjectCsv(), 2));
+    expect(lockedPreview.errors).toContainEqual(expect.objectContaining({ file: "2年科目CSV", row: 2, field: "科目名" }));
+  });
   it("previews and applies only the selected student domain, preserving omitted students", async () => {
     const { database, service } = setup(); database.exec("INSERT INTO students VALUES('old','OLD','既存','きそん','2000-01-01','男','old@example.test','','','','system-engineer',2027,'enrolled',0,'admin',0,0)");
     const preview = await service.preview("admin", input("students", studentCsv())); expect(preview.errors).toEqual([]); expect(database.query("SELECT count(*) AS count FROM students WHERE id!='old'").get()).toEqual({ count: 0 });

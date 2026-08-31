@@ -94,16 +94,17 @@ export class D1NormalImportService implements NormalImportService {
     const studentByEmail = new Map(students.filter((item) => item.email).map((item) => [item.email!.toLowerCase(), item]));
     for (const item of parsed.students) {
       const match = studentByEmail.get(item.email);
-      if (match && match.studentNumber !== item.studentNumber) parsed.errors.push({ file: "学生CSV", row: 0, field: "メール", reason: "別の学籍番号に登録済みのメールアドレスです。" });
+      if (match && match.studentNumber !== item.studentNumber) parsed.errors.push({ file: "学生CSV", row: item.row, field: "メールアドレス", reason: "別の学籍番号に登録済みのメールアドレスです。" });
       const number = studentByNumber.get(item.studentNumber);
-      if (number && number.enrollmentYear > input.academicYear) parsed.errors.push({ file: "学生CSV", row: 0, field: "学籍番号", reason: "在籍年度が不正な既存学生です。" });
+      if (number && number.email && number.email.toLowerCase() !== item.email) parsed.errors.push({ file: "学生CSV", row: item.row, field: "メールアドレス", reason: "既存の学籍番号に登録されたメールアドレスと一致しません。" });
+      if (number && number.enrollmentYear > input.academicYear) parsed.errors.push({ file: "学生CSV", row: item.row, field: "学籍番号", reason: "在籍年度が不正な既存学生です。" });
     }
     const candidateByName = new Map<string, Set<string>>();
     for (const teacher of activeTeachers) { const set = candidateByName.get(teacher.name) ?? new Set<string>(); set.add(teacher.id); candidateByName.set(teacher.name, set); }
     for (const teacher of parsed.teachers) { const existing = userByEmail.get(teacher.email); if (existing && existing.status !== "active") continue; const id = existing?.id ?? `new:${teacher.email}`; const set = candidateByName.get(teacher.name) ?? new Set<string>(); set.add(id); candidateByName.set(teacher.name, set); }
-    for (const subject of parsed.subjects) if ((candidateByName.get(subject.teacherName)?.size ?? 0) !== 1) parsed.errors.push({ file: `${subject.gradeLevel}年科目CSV`, row: 0, field: "担当講師", reason: "担当講師名が一意に決まりません。メールアドレスを確認してください。" });
+    for (const subject of parsed.subjects) if ((candidateByName.get(subject.teacherName)?.size ?? 0) !== 1) parsed.errors.push({ file: `${subject.gradeLevel}年科目CSV`, row: subject.row, field: "担当講師", reason: "担当講師名が一意に決まりません。メールアドレスを確認してください。" });
     const subjectByKey = new Map(subjects.map((item) => [`${item.gradeLevel}:${item.name}`, item]));
-    for (const item of parsed.subjects) { const existing = subjectByKey.get(`${item.gradeLevel}:${item.name}`); if (existing?.locked) parsed.errors.push({ file: `${item.gradeLevel}年科目CSV`, row: 0, field: "科目名", reason: "確定済みまたは成績登録済みの科目は更新できません。" }); }
+    for (const item of parsed.subjects) { const existing = subjectByKey.get(`${item.gradeLevel}:${item.name}`); if (existing?.locked) parsed.errors.push({ file: `${item.gradeLevel}年科目CSV`, row: item.row, field: "科目名", reason: "確定済みまたは成績登録済みの科目は更新できません。" }); }
     return { parsed, users, students, courses, subjects, activeTeachers, courseByName, userByEmail, studentByNumber, candidateByName };
   }
   async preview(actorId: string, input: ImportInput): Promise<ImportPreview> {

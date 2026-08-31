@@ -3,6 +3,7 @@ import { ensureCurrentAcademicYear, type Clock } from "../academic-year";
 import { createWorkerId } from "../worker-crypto";
 
 type RowError = { file: string; row: number; field: string; reason: string };
+export type CsvRow = string[] & { readonly sourceRow: number };
 type TeacherRow = { name: string; kana: string; age: number; gender: "男" | "女"; email: string };
 type SubjectRow = { course: "システムエンジニア" | "Webデザイナー" | "共通"; name: string; teacherName: string; gradeLevel: 1 | 2 | 3 };
 type StudentRow = { studentNumber: string; name: string; kana: string; age: number; birthDate: string; gender: "男" | "女"; email: string; phone: string; postalCode: string; address: string; course: "システムエンジニア" | "Webデザイナー" };
@@ -34,36 +35,45 @@ export const parseCsv = (file: string, source: string, expectedHeaders: readonly
   if (utf8Length(source) > MAX_CSV_BYTES) { errors.push({ file, row: 0, field: "ファイル", reason: "ファイルサイズは150KB以下にしてください。" }); return []; }
   if (source.includes("\uFFFD")) { errors.push({ file, row: 0, field: "ファイル", reason: "UTF-8として読み取れない文字が含まれています。" }); return []; }
   const input = source.startsWith("\uFEFF") ? source.slice(1) : source;
-  const rows: string[][] = []; let row: string[] = []; let field = ""; let quoted = false;
+  const rows: CsvRow[] = []; let row: string[] = []; let field = ""; let quoted = false; let sourceRow = 1; let rowStart = 1;
+  const completeRow = () => {
+    const completed = row as CsvRow;
+    Object.defineProperty(completed, "sourceRow", { value: rowStart });
+    rows.push(completed);
+    row = []; field = ""; rowStart = sourceRow + 1;
+  };
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index];
-    if (quoted) { if (char === '"' && input[index + 1] === '"') { field += '"'; index += 1; } else if (char === '"') { quoted = false; if (input[index + 1] && ![",", "\r", "\n"].includes(input[index + 1])) { errors.push({ file, row: rows.length + 1, field: "CSV", reason: "引用符の後には区切り文字または改行だけを指定してください。" }); return []; } } else field += char; continue; }
-    if (char === '"') { if (field) { errors.push({ file, row: rows.length + 1, field: "CSV", reason: "引用符の位置が正しくありません。" }); return []; } quoted = true; }
+    if (quoted) { if (char === '"' && input[index + 1] === '"') { field += '"'; index += 1; } else if (char === '"') { quoted = false; if (input[index + 1] && ![",", "\r", "\n"].includes(input[index + 1])) { errors.push({ file, row: sourceRow, field: "CSV", reason: "引用符の後には区切り文字または改行だけを指定してください。" }); return []; } } else { field += char; if (char === "\n") sourceRow += 1; } continue; }
+    if (char === '"') { if (field) { errors.push({ file, row: sourceRow, field: "CSV", reason: "引用符の位置が正しくありません。" }); return []; } quoted = true; }
     else if (char === ",") { row.push(field); field = ""; }
-    else if (char === "\n") { row.push(field.replace(/\r$/, "")); rows.push(row); row = []; field = ""; }
-    else if (char === "\r") { if (input[index + 1] !== "\n") { errors.push({ file, row: rows.length + 1, field: "CSV", reason: "改行はCRLFまたはLFで指定してください。" }); return []; } }
+    else if (char === "\n") { row.push(field.replace(/\r$/, "")); completeRow(); sourceRow += 1; }
+    else if (char === "\r") { if (input[index + 1] !== "\n") { errors.push({ file, row: sourceRow, field: "CSV", reason: "改行はCRLFまたはLFで指定してください。" }); return []; } }
     else field += char;
   }
-  if (quoted) { errors.push({ file, row: rows.length + 1, field: "CSV", reason: "引用符が閉じられていません。" }); return []; }
-  if (field || row.length) { row.push(field); rows.push(row); }
+  if (quoted) { errors.push({ file, row: sourceRow, field: "CSV", reason: "引用符が閉じられていません。" }); return []; }
+  if (field || row.length) { row.push(field); completeRow(); }
   if (rows.length === 0 || rows[0]?.join("\u0000") !== expectedHeaders.join("\u0000")) { errors.push({ file, row: 1, field: "見出し", reason: `見出しは「${expectedHeaders.join("、")}」にしてください。` }); return []; }
   const data = rows.slice(1).filter((columns) => columns.some((column) => text(column)));
   if (data.length > MAX_ROWS) { errors.push({ file, row: 0, field: "行数", reason: "1ファイルは1000行以下にしてください。" }); return []; }
-  for (const [index, columns] of data.entries()) if (columns.length !== expectedHeaders.length) errors.push({ file, row: index + 2, field: "列数", reason: "列数が見出しと一致しません。" });
+  for (const columns of data) if (columns.length !== expectedHeaders.length) errors.push({ file, row: columns.sourceRow, field: "列数", reason: "列数が見出しと一致しません。" });
   return data;
 };
 
-const parseTeachers = (source: string, errors: RowError[]): TeacherRow[] => parseCsv("講師CSV", source, headers.teachers, errors).flatMap((row, index) => {
-  const [name, kana, ageRaw, gender, email] = row.map(text); const age = Number(ageRaw); const number = index + 2;
+const parseTeachers = (source: string, errors: RowError[]): TeacherRow[] => parseCsv("講師CSV", source, headers.teachers, errors).flatMap((row) => {
+  if (row.length !== headers.teachers.length) return [];
+  const [name, kana, ageRaw, gender, email] = row.map(text); const age = Number(ageRaw); const number = row.sourceRow;
   if (!name || !kana || !Number.isInteger(age) || age < 18 || age > 100 || (gender !== "男" && gender !== "女") || !validEmail(email)) { errors.push({ file: "講師CSV", row: number, field: "入力値", reason: "氏名・ひらがな・年齢・性別・メールアドレスを確認してください。" }); return []; }
   return [{ name, kana, age, gender, email: email.toLowerCase() }];
 });
-const parseSubjects = (gradeLevel: 1 | 2 | 3, source: string, errors: RowError[]): SubjectRow[] => parseCsv(`${gradeLevel}年科目CSV`, source, headers.subjects, errors).flatMap((row, index) => {
-  const [course, name, teacherName] = row.map(text); if (!(course in courses) && course !== "共通" || !name || !teacherName) { errors.push({ file: `${gradeLevel}年科目CSV`, row: index + 2, field: "入力値", reason: "専攻・科目名・担当講師を確認してください。" }); return []; }
+const parseSubjects = (gradeLevel: 1 | 2 | 3, source: string, errors: RowError[]): SubjectRow[] => parseCsv(`${gradeLevel}年科目CSV`, source, headers.subjects, errors).flatMap((row) => {
+  if (row.length !== headers.subjects.length) return [];
+  const [course, name, teacherName] = row.map(text); if (!(course in courses) && course !== "共通" || !name || !teacherName) { errors.push({ file: `${gradeLevel}年科目CSV`, row: row.sourceRow, field: "入力値", reason: "専攻・科目名・担当講師を確認してください。" }); return []; }
   return [{ course: course as SubjectRow["course"], name, teacherName, gradeLevel }];
 });
-const parseStudents = (source: string, targetYear: number, errors: RowError[]): StudentRow[] => parseCsv("新入生CSV", source, headers.students, errors).flatMap((row, index) => {
-  const [studentNumber, name, kana, ageRaw, birthDate, gender, email, phone, postalCode, address, course] = row.map(text); const age = Number(ageRaw); const number = index + 2;
+const parseStudents = (source: string, targetYear: number, errors: RowError[]): StudentRow[] => parseCsv("新入生CSV", source, headers.students, errors).flatMap((row) => {
+  if (row.length !== headers.students.length) return [];
+  const [studentNumber, name, kana, ageRaw, birthDate, gender, email, phone, postalCode, address, course] = row.map(text); const age = Number(ageRaw); const number = row.sourceRow;
   if (!studentNumber || !name || !kana || !Number.isInteger(age) || !validBirthDate(birthDate) || age !== ageAtYear(birthDate, targetYear) || (gender !== "男" && gender !== "女") || !validEmail(email) || !(course in courses)) { errors.push({ file: "新入生CSV", row: number, field: "入力値", reason: "学籍番号、氏名、年齢と生年月日、性別、メール、専攻を確認してください。" }); return []; }
   return [{ studentNumber, name, kana, age, birthDate, gender, email: email.toLowerCase(), phone, postalCode, address, course: course as StudentRow["course"] }];
 });
