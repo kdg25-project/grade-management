@@ -152,12 +152,19 @@ export class D1GradeService implements GradeService {
 
   private async eligibleStudents(subjectId: string, academicYear: number, gradeLevel: number, term: 1 | 2): Promise<GradeStudent[]> {
     const rows = await this.rows<SqlRow>(this.database.prepare(`
-      SELECT s.id, s.student_number, s.name,
-             COALESCE((SELECT h.status FROM student_status_history h
-                WHERE h.student_id = s.id AND h.effective_academic_year <= ?
-                ORDER BY h.effective_academic_year DESC, h.changed_at DESC LIMIT 1),
-               CASE WHEN s.status_effective_academic_year IS NULL OR s.status_effective_academic_year > ?
-                    THEN 'enrolled' ELSE s.status END) AS status,
+      WITH student_snapshot AS (
+        SELECT s.*,
+          COALESCE((SELECT h.status FROM student_status_history h
+            WHERE h.student_id = s.id AND h.effective_academic_year <= ?
+            ORDER BY h.effective_academic_year DESC, h.changed_at DESC, h.id DESC LIMIT 1),
+            CASE WHEN s.status_effective_academic_year IS NULL OR s.status_effective_academic_year > ? THEN 'enrolled' ELSE s.status END) AS snapshot_status,
+          COALESCE((SELECT h.effective_academic_year FROM student_status_history h
+            WHERE h.student_id = s.id AND h.effective_academic_year <= ?
+            ORDER BY h.effective_academic_year DESC, h.changed_at DESC, h.id DESC LIMIT 1),
+            CASE WHEN s.status_effective_academic_year IS NULL OR s.status_effective_academic_year > ? THEN NULL ELSE s.status_effective_academic_year END) AS snapshot_status_effective_academic_year
+        FROM students s
+      )
+      SELECT s.id, s.student_number, s.name, s.snapshot_status AS status,
              g.attempt, g.attendance_rate, g.attitude, g.assignment,
              g.final_score_numerator, g.final_score_denominator, g.letter_grade,
              EXISTS(
@@ -166,7 +173,7 @@ export class D1GradeService implements GradeService {
                WHERE failed.student_id=s.id AND failed.subject_id=? AND failed.academic_year=? AND failed.term=?
                  AND failed.letter_grade='F' AND failed_term.is_finalized=1
              ) AS has_failed_history
-      FROM students s
+      FROM student_snapshot s
       INNER JOIN subject_courses sc ON sc.course_id = s.course_id AND sc.subject_id = ?
       LEFT JOIN grades g ON g.id = (
         SELECT latest.id FROM grades latest
@@ -175,9 +182,9 @@ export class D1GradeService implements GradeService {
         ORDER BY latest.attempt DESC LIMIT 1
       )
       WHERE s.enrollment_year = ?
-        AND NOT (s.status = 'withdrawn' AND s.status_effective_academic_year < ?)
+        AND NOT (s.snapshot_status = 'withdrawn' AND s.snapshot_status_effective_academic_year < ?)
       ORDER BY s.student_number ASC
-    `).bind(academicYear, academicYear, subjectId, academicYear, term, subjectId, subjectId, academicYear, term, academicYear - gradeLevel + 1, academicYear));
+    `).bind(academicYear, academicYear, academicYear, academicYear, subjectId, academicYear, term, subjectId, subjectId, academicYear, term, academicYear - gradeLevel + 1, academicYear));
     return rows.map((row) => {
       const status = asStatus(row.status);
       const hasGrade = row.attempt !== null && row.attempt !== undefined;
@@ -276,7 +283,10 @@ export class D1GradeService implements GradeService {
           AND NOT EXISTS (SELECT 1 FROM requested r WHERE NOT EXISTS (
             SELECT 1 FROM students student JOIN subject_courses sc ON sc.course_id = student.course_id AND sc.subject_id = s.id
             WHERE student.id = r.student_id AND student.enrollment_year = s.academic_year - s.grade_level + 1
-              AND student.status = 'enrolled'
+              AND COALESCE((SELECT h.status FROM student_status_history h
+                WHERE h.student_id = student.id AND h.effective_academic_year <= s.academic_year
+                ORDER BY h.effective_academic_year DESC, h.changed_at DESC, h.id DESC LIMIT 1),
+                CASE WHEN student.status_effective_academic_year IS NULL OR student.status_effective_academic_year > s.academic_year THEN 'enrolled' ELSE student.status END) = 'enrolled'
           ))
       )
       INSERT INTO grades (id, student_id, subject_id, academic_year, term, attempt, attendance_rate, attitude, assignment,
@@ -385,7 +395,11 @@ export class D1GradeService implements GradeService {
           AND (? = 1 OR EXISTS (SELECT 1 FROM subject_term_statuses first_term WHERE first_term.subject_id = s.id AND first_term.term = 1 AND first_term.is_finalized = 1))
           AND NOT EXISTS (
             SELECT 1 FROM students student JOIN subject_courses sc ON sc.course_id = student.course_id AND sc.subject_id = s.id
-            WHERE student.enrollment_year = s.academic_year - s.grade_level + 1 AND student.status = 'enrolled'
+            WHERE student.enrollment_year = s.academic_year - s.grade_level + 1
+              AND COALESCE((SELECT h.status FROM student_status_history h
+                WHERE h.student_id = student.id AND h.effective_academic_year <= s.academic_year
+                ORDER BY h.effective_academic_year DESC, h.changed_at DESC, h.id DESC LIMIT 1),
+                CASE WHEN student.status_effective_academic_year IS NULL OR student.status_effective_academic_year > s.academic_year THEN 'enrolled' ELSE student.status END) = 'enrolled'
               AND NOT EXISTS (
                 SELECT 1 FROM grades g WHERE g.student_id = student.id AND g.subject_id = s.id AND g.academic_year = s.academic_year AND g.term = ?
                   AND g.attempt = (SELECT MAX(latest.attempt) FROM grades latest WHERE latest.student_id = student.id AND latest.subject_id = s.id AND latest.academic_year = s.academic_year AND latest.term = ?)
@@ -428,7 +442,7 @@ export class D1GradeService implements GradeService {
           reopened_reason = ?, last_transition_id = ?, updated_at = unixepoch()
         WHERE subject_id = ? AND term = ? AND is_finalized = 1
           AND EXISTS (SELECT 1 FROM subjects s WHERE s.id = subject_term_statuses.subject_id AND s.academic_year = ?)
-          AND (? = 2 OR (NOT EXISTS (SELECT 1 FROM subject_term_statuses t2 WHERE t2.subject_id = subject_term_statuses.subject_id AND t2.term = 2)
+          AND (? = 2 OR (NOT EXISTS (SELECT 1 FROM subject_term_statuses t2 WHERE t2.subject_id = subject_term_statuses.subject_id AND t2.term = 2 AND t2.is_finalized = 1)
             AND NOT EXISTS (SELECT 1 FROM grades g2 WHERE g2.subject_id = subject_term_statuses.subject_id AND g2.academic_year = ? AND g2.term = 2)))
       `).bind(adminUserId, reason.trim(), transitionId, subjectId, term, academicYear, term, academicYear),
       this.database.prepare(`INSERT INTO audit_logs (id, actor_user_id, action, entity_type, entity_id, academic_year, payload_json)

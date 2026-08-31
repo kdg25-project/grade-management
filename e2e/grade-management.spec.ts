@@ -84,6 +84,10 @@ async function signInOutcome(page: Page, account: { email: string; password: str
 }
 
 async function ensureSession(page: Page, account: AccountCredentials, destination: RegExp) {
+  // A valid session redirects /login to its own landing page.  Clear the
+  // previous role's cookie so this serial smoke test can intentionally switch
+  // between the teacher and administrator fixtures.
+  await page.context().clearCookies();
   if (await signInOutcome(page, { email: account.email, password: account.changedPassword }, destination) === "ready") return;
   expect(await signInOutcome(page, { email: account.email, password: account.password }, destination)).toBe("change-password");
   await changeInitialPassword(page, account.password, account.changedPassword);
@@ -125,6 +129,13 @@ test.describe("grade-management local smoke", () => {
     expect(signInPosts).toBe(1);
   });
 
+  test("keeps public password help contact-only", async ({ page }) => {
+    await page.goto("/forgot-password");
+    await expect(page.getByRole("heading", { name: "教務担当へお問い合わせください" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "再設定メールを送信" })).toHaveCount(0);
+    await expect(page.getByLabel("メールアドレス")).toHaveCount(0);
+  });
+
   test("protects routes and persists grades through finalization and reopen", async ({ page }) => {
     const credentials = await readCredentials();
     const protectedStart = performance.now();
@@ -149,7 +160,13 @@ test.describe("grade-management local smoke", () => {
     await page.getByLabel("開発用 学生の平常点").fill("9");
     await page.getByLabel("開発用 学生の課題点").fill("8");
     const saveStarted = performance.now();
+    const gradeSaveResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "PUT");
+    const gradeRefreshResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "GET");
     await page.getByRole("button", { name: "変更を保存" }).click();
+    expect((await gradeSaveResponse).ok()).toBeTruthy();
+    const refreshedGrades = await gradeRefreshResponse;
+    expect(refreshedGrades.status()).toBe(200);
+    await expect.poll(async () => (await refreshedGrades.json() as { students: Array<{ name: string; grade: { attendanceRate: number | null } | null }> }).students.find((student) => student.name === "開発用 学生")?.grade?.attendanceRate).toBe(95);
     await expect(page.getByText("成績を保存しました。")).toBeVisible();
     await page.reload();
     const persistedAttendance = page.getByLabel("開発用 学生の出席率");
@@ -207,15 +224,15 @@ test.describe("grade-management local smoke", () => {
     await initialGradeRow.getByRole("button", { name: "詳細・修正" }).click();
     await expect(page.getByRole("heading", { name: "開発用 学生さん・開発用データベース" })).toBeVisible();
     await page.getByLabel("出席率").fill("0");
-    await page.getByLabel("平常点").fill("0");
-    await page.getByLabel("課題点").fill("0");
+    await page.getByLabel("平常点（1〜10）").fill("1");
+    await page.getByLabel("課題点（1〜10）").fill("1");
     await page.getByLabel("理由").fill("E2E: 確定済み評価を再試験対象へ修正");
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "最新成績を修正" }).click();
     await expect(page.getByText(/1回目: F/u)).toBeVisible();
     await page.getByLabel("出席率").fill("95");
-    await page.getByLabel("平常点").fill("9");
-    await page.getByLabel("課題点").fill("8");
+    await page.getByLabel("平常点（1〜10）").fill("9");
+    await page.getByLabel("課題点（1〜10）").fill("8");
     await page.getByLabel("理由").fill("E2E: 確定済みFの再試験合格");
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "再試験を登録" }).click();
@@ -379,8 +396,7 @@ test.describe("grade-management local smoke", () => {
     await page.getByLabel("検索").fill(rollover.graduate.studentNumber);
     await page.getByRole("button", { name: "更新", exact: true }).click();
     const graduateRow = page.getByRole("row").filter({ hasText: rollover.graduate.studentNumber });
-    await expect(graduateRow).toContainText(rollover.graduate.name);
-    await expect(graduateRow).toContainText("卒業");
+    await expect(graduateRow).toHaveCount(0);
 
     await page.goto("/admin/subjects");
     await expect(page.getByRole("heading", { name: "今年度の科目を管理する" })).toBeVisible();
@@ -393,13 +409,10 @@ test.describe("grade-management local smoke", () => {
 
     const yearsAfterApply = await getAuthenticatedJson(page, "/api/admin/years");
     const studentAfterApply = await getAuthenticatedJson(page, `/api/admin/students?page=1&pageSize=20&search=${encodeURIComponent(rollover.student.studentNumber)}`);
-    const graduateAfterApply = await getAuthenticatedJson(page, `/api/admin/students?page=1&pageSize=20&search=${encodeURIComponent(rollover.graduate.studentNumber)}`);
     const subjectsAfterApply = await getAuthenticatedJson(page, `/api/admin/master/subjects?year=${rollover.targetYear}`);
     expect((yearsAfterApply.body as { years: unknown[] }).years).toEqual(expect.arrayContaining([expect.objectContaining({ year: rollover.targetYear, isCurrent: true })]));
     expect(studentAfterApply.body).toMatchObject({ currentAcademicYear: rollover.targetYear, items: [expect.objectContaining({ studentNumber: rollover.student.studentNumber, name: rollover.student.name, enrollmentYear: rollover.targetYear, status: "enrolled" })] });
     expect((studentAfterApply.body as { items: unknown[] }).items).toHaveLength(1);
-    expect(graduateAfterApply.body).toMatchObject({ currentAcademicYear: rollover.targetYear, items: [expect.objectContaining({ studentNumber: rollover.graduate.studentNumber, name: rollover.graduate.name, status: "graduated", statusEffectiveAcademicYear: rollover.targetYear })] });
-    expect((graduateAfterApply.body as { items: unknown[] }).items).toHaveLength(1);
     expect(subjectsAfterApply.body).toMatchObject({ currentAcademicYear: rollover.targetYear });
     const persistedSubjects = (subjectsAfterApply.body as { items: Array<{ name: string; gradeLevel: number; teacherName: string }> }).items.filter((subject) => rollover.subjects.some((expected) => expected.name === subject.name));
     expect(persistedSubjects).toEqual(expect.arrayContaining(rollover.subjects.map((subject) => expect.objectContaining({ name: subject.name, gradeLevel: subject.grade, teacherName: rollover.teacher.name }))));

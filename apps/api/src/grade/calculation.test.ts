@@ -26,6 +26,8 @@ describe("grade calculation", () => {
 
   it("rejects invalid input and non-100 weight totals instead of clamping", () => {
     expect(() => calculateGrade({ attendanceRate: 101, attitude: 1, assignment: 1 }, weights)).toThrow(GradeValidationError);
+    expect(() => calculateGrade({ attendanceRate: 100, attitude: 0, assignment: 1 }, weights)).toThrow(GradeValidationError);
+    expect(() => calculateGrade({ attendanceRate: 100, attitude: 1, assignment: 0 }, weights)).toThrow(GradeValidationError);
     expect(() => validateGradeWeights({ attendanceWeight: 34, attitudeWeight: 33, assignmentWeight: 32 })).toThrow(GradeValidationError);
   });
 

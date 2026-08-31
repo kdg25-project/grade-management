@@ -8,6 +8,16 @@ describe("post-login routing", () => {
     expect(destinationForSignedInUser({ role: "teacher", status: "active", mustChangePassword: false })).toBe("/teacher/subjects");
   });
 
+  it("restores an allowed deep link including its search parameters", () => {
+    expect(destinationForSignedInUser({ role: "teacher", status: "active", mustChangePassword: false }, { pathname: "/teacher/subjects/dev/grades", search: "?term=2&year=2027" })).toBe("/teacher/subjects/dev/grades?term=2&year=2027");
+  });
+
+  it("falls back when a requested path is cross-role or unsafe", () => {
+    const admin = { role: "admin" as const, status: "active" as const, mustChangePassword: false };
+    expect(destinationForSignedInUser(admin, { pathname: "/teacher/subjects", search: "?year=2027" })).toBe("/admin");
+    expect(destinationForSignedInUser(admin, { pathname: "//example.test/admin" })).toBe("/admin");
+  });
+
   it("keeps mandatory password changes ahead of the role destination", () => {
     expect(destinationForSignedInUser({ role: "teacher", status: "active", mustChangePassword: true })).toBe("/change-password");
   });

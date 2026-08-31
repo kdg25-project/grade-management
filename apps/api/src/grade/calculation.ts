@@ -26,8 +26,8 @@ const integerInRange = (value: number, minimum: number, maximum: number, code: s
 
 export const validateGradeInputs = (inputs: GradeInputs) => {
   if (inputs.attendanceRate !== null) integerInRange(inputs.attendanceRate, 0, 100, "INVALID_ATTENDANCE_RATE", "出席率");
-  if (inputs.attitude !== null) integerInRange(inputs.attitude, 0, 10, "INVALID_ATTITUDE", "平常点");
-  if (inputs.assignment !== null) integerInRange(inputs.assignment, 0, 10, "INVALID_ASSIGNMENT", "課題点");
+  if (inputs.attitude !== null) integerInRange(inputs.attitude, 1, 10, "INVALID_ATTITUDE", "平常点");
+  if (inputs.assignment !== null) integerInRange(inputs.assignment, 1, 10, "INVALID_ASSIGNMENT", "課題点");
 };
 
 export const validateGradeWeights = (weights: GradeWeights) => {

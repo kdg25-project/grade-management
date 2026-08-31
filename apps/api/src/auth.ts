@@ -2,15 +2,19 @@ import { createDb } from "@grade-management/db";
 import * as schema from "@grade-management/db/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getAuthoritativeSessionFromCtx } from "better-auth/api";
 
 import {
   createPasswordResetCompletionHandler,
-  oldSessionWhere,
   rejectsSignIn,
   shouldClearPasswordChangeRequirement,
 } from "./auth-policy";
 import { createPasswordResetEmailSender, type EmailBinding } from "./email";
+import {
+  bypassesActiveSessionPolicy,
+  createActiveUserSessionPolicy,
+  sessionIdentity,
+} from "./session-policy";
 
 export type AuthEnvironment = {
   DB: D1Database;
@@ -84,6 +88,7 @@ const invalidCredentials = () =>
 
 /** Creates request-scoped auth to keep Worker bindings out of module scope. */
 export const createAuthRuntime = (env: AuthEnvironment, executionCtx?: ExecutionContext) => {
+  const activeUserSessions = createActiveUserSessionPolicy(env.DB);
   const emailSender = createPasswordResetEmailSender(
     env.EMAIL,
     env.EMAIL_FROM,
@@ -120,14 +125,27 @@ export const createAuthRuntime = (env: AuthEnvironment, executionCtx?: Execution
     hooks: {
       before: createAuthMiddleware(async (context) => {
         const body = context.body as { email?: string; password?: string } | undefined;
-        if (context.path !== "/sign-in/email" || !body?.email) return;
-        const found = await context.context.internalAdapter.findUserByEmail(body.email);
-        const status = (found?.user as { status?: "active" | "leave" | "retired" } | undefined)?.status;
-        if (!rejectsSignIn(context.path, status)) return;
+        if (context.path === "/sign-in/email" && body?.email) {
+          const found = await context.context.internalAdapter.findUserByEmail(body.email);
+          const status = (found?.user as { status?: "active" | "leave" | "retired" } | undefined)?.status;
+          if (rejectsSignIn(context.path, status)) {
+            // Keep the rejection indistinguishable from a normal failed sign-in.
+            await context.context.password.hash(body.password ?? "");
+            throw invalidCredentials();
+          }
+        }
 
-        // Keep the rejection indistinguishable from a normal failed sign-in.
-        await context.context.password.hash(body.password ?? "");
-        throw invalidCredentials();
+        if (bypassesActiveSessionPolicy(context.path)) return;
+
+        // This is Better Auth's public, authoritative session read. Global hooks run before
+        // endpoint middleware, so do not rely on context.context.session being populated yet.
+        const identity = sessionIdentity(await getAuthoritativeSessionFromCtx(context));
+        if (identity && !(await activeUserSessions.permits(identity))) {
+          throw APIError.from("UNAUTHORIZED", {
+            code: "SESSION_SUPERSEDED",
+            message: "Session is no longer active",
+          });
+        }
       }),
       after: createAuthMiddleware(async (context) => {
         if (shouldClearPasswordChangeRequirement(context.path, context.context.returned) && context.context.session?.user.id) {
@@ -137,16 +155,23 @@ export const createAuthRuntime = (env: AuthEnvironment, executionCtx?: Execution
         const newSession = context.context.newSession;
         if (!newSession) return;
 
-        // Keep the session created by this request and revoke its older siblings.
-        await context.context.adapter.deleteMany({
-          model: "session",
-          where: oldSessionWhere(newSession.user.id, newSession.session.token),
-        });
+        // The marker UPSERT is the atomic authorization hand-off. Do not delete older rows:
+        // concurrent logins can otherwise each delete the other's newly created session.
+        try {
+          await activeUserSessions.activate({ userId: newSession.user.id, token: newSession.session.token });
+        } catch (error) {
+          console.error(JSON.stringify({ event: "active_user_session_upsert_failed", error: String(error) }));
+          throw APIError.from("INTERNAL_SERVER_ERROR", {
+            code: "ACTIVE_SESSION_UPDATE_FAILED",
+            message: "Unable to establish session",
+          });
+        }
       }),
     },
   });
   return {
     auth,
+    activeUserSessions,
     requestPasswordResetAndWait: (email: string) => delivery.requestAndWait(email, () => auth.api.requestPasswordReset({ body: { email, redirectTo: `${env.BETTER_AUTH_URL}/reset-password` } })),
   };
 };

@@ -5,27 +5,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 
-const genericMessage = "登録情報を確認し、該当する場合はパスワード再設定のご案内をメールでお送りします。";
-
-export function PasswordResetRequestForm() {
-  const [email, setEmail] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSubmitting(true);
-    try {
-      await authClient.requestPasswordReset({ email, redirectTo: `${window.location.origin}/reset-password` });
-    } finally {
-      setMessage(genericMessage);
-      setIsSubmitting(false);
-    }
-  }
-
-  return <form className="loginForm" onSubmit={submit}><div className="fieldGroup"><label htmlFor="reset-email">メールアドレス</label><input id="reset-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>{message ? <p className="formSuccess" role="status">{message}</p> : null}<Button className="primaryAction" type="submit" disabled={isSubmitting}>{isSubmitting ? <LoaderCircle className="spin" aria-hidden="true" /> : null}{isSubmitting ? "送信中…" : "再設定メールを送信"}</Button></form>;
-}
-
 export function ResetPasswordForm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();

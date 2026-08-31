@@ -2,7 +2,7 @@
 
 import { Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
@@ -10,6 +10,7 @@ import { destinationForSignedInUser } from "@/lib/login-routing";
 
 export function LoginForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -34,7 +35,7 @@ export function LoginForm() {
       return;
     }
 
-    const destination = destinationForSignedInUser(session.user);
+    const destination = destinationForSignedInUser(session.user, location.state?.from);
     if (!destination) {
       sessionConfirmationInFlight.current = false;
       submissionInFlight.current = false;
@@ -47,7 +48,7 @@ export function LoginForm() {
     hasNavigated.current = true;
     sessionConfirmationInFlight.current = false;
     navigate(destination, { replace: true });
-  }, [isConfirmingSession, isRefetching, isSessionPending, navigate, session, sessionError]);
+  }, [isConfirmingSession, isRefetching, isSessionPending, location.state, navigate, session, sessionError]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,7 +69,7 @@ export function LoginForm() {
         return;
       }
 
-      if (!destinationForSignedInUser(data?.user)) {
+      if (!destinationForSignedInUser(data?.user, location.state?.from)) {
         setErrorMessage("ログイン情報を確認できませんでした。もう一度お試しください。");
         submissionInFlight.current = false;
         setIsSubmitting(false);

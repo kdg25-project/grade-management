@@ -7,5 +7,6 @@ export const adminGradePayload = (draft: AdminGradeDraft) => {
   const values = { attendanceRate: parse(draft.attendanceRate), attitude: parse(draft.attitude), assignment: parse(draft.assignment), reason: draft.reason.trim() };
   if (!values.reason) return null;
   if ([values.attendanceRate, values.attitude, values.assignment].some((value) => value !== null && !Number.isInteger(value))) return null;
+  if ((values.attendanceRate !== null && (values.attendanceRate < 0 || values.attendanceRate > 100)) || (values.attitude !== null && (values.attitude < 1 || values.attitude > 10)) || (values.assignment !== null && (values.assignment < 1 || values.assignment > 10))) return null;
   return values;
 };

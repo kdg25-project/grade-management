@@ -69,6 +69,55 @@ export class GradeApiError extends Error {
   }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+const isGradeStatus = (value: unknown): value is GradeStatus => value === "enrolled" || value === "suspended" || value === "withdrawn" || value === "graduated";
+const isLetterGrade = (value: unknown) => value === null || value === "S" || value === "A" || value === "B" || value === "C" || value === "F";
+const isIntegerInRange = (value: unknown, minimum: number, maximum: number): value is number => Number.isInteger(value) && (value as number) >= minimum && (value as number) <= maximum;
+const isNullableIntegerInRange = (value: unknown, minimum: number, maximum: number) => value === null || isIntegerInRange(value, minimum, maximum);
+const gradeNumerator = (attendanceRate: number, attitude: number, assignment: number, weights: GradeWeights) => attendanceRate * weights.attendanceWeight + attitude * 10 * weights.attitudeWeight + assignment * 10 * weights.assignmentWeight;
+const letterGradeForNumerator = (numerator: number) => numerator >= 9_000 ? "S" : numerator >= 8_000 ? "A" : numerator >= 7_000 ? "B" : numerator >= 6_000 ? "C" : "F";
+
+function isValidGrade(grade: Record<string, unknown>, weights: GradeWeights | null) {
+  if (!Number.isInteger(grade.attempt) || (grade.attempt as number) < 1
+    || !isNullableIntegerInRange(grade.attendanceRate, 0, 100)
+    || !isNullableIntegerInRange(grade.attitude, 0, 10)
+    || !isNullableIntegerInRange(grade.assignment, 0, 10)
+    || !isLetterGrade(grade.letterGrade)) return false;
+
+  const inputs = [grade.attendanceRate, grade.attitude, grade.assignment];
+  if (inputs.some((input) => input === null)) {
+    return grade.finalScoreNumerator === null && grade.finalScoreDenominator === null && grade.letterGrade === null;
+  }
+  if (!weights || !isIntegerInRange(grade.finalScoreNumerator, 0, 10_000) || grade.finalScoreDenominator !== 100 || typeof grade.letterGrade !== "string") return false;
+  const numerator = gradeNumerator(grade.attendanceRate as number, grade.attitude as number, grade.assignment as number, weights);
+  return grade.finalScoreNumerator === numerator && grade.letterGrade === letterGradeForNumerator(numerator);
+}
+
+/**
+ * Hono's inferred response type is compile-time only. Validate the payload at
+ * the browser boundary so an incomplete or malformed successful response
+ * cannot crash the grade editor while rendering.
+ */
+export function parseTeacherGradesResponse(value: unknown): GradesResponse {
+  if (!isRecord(value) || !Number.isInteger(value.academicYear) || typeof value.editable !== "boolean" || typeof value.isFinalized !== "boolean" || (value.isFinalized && value.editable) || !Array.isArray(value.students)) {
+    throw new GradeApiError("INVALID_GRADE_RESPONSE", "成績データの形式が正しくありません。", 502);
+  }
+
+  const validWeights = value.weights === null || (isRecord(value.weights)
+    && [value.weights.attendanceWeight, value.weights.attitudeWeight, value.weights.assignmentWeight].every((weight) => isIntegerInRange(weight, 0, 100))
+    && (value.weights.attendanceWeight as number) + (value.weights.attitudeWeight as number) + (value.weights.assignmentWeight as number) === 100);
+  const weights = validWeights && value.weights !== null ? value.weights as GradeWeights : null;
+  if (!validWeights || !value.students.every((student) => {
+    if (!isRecord(student) || typeof student.id !== "string" || typeof student.studentNumber !== "string" || typeof student.name !== "string" || !isGradeStatus(student.status) || typeof student.editable !== "boolean" || typeof student.hasFailedHistory !== "boolean" || student.editable !== (student.status === "enrolled")) return false;
+    if (student.grade === null) return true;
+    return weights !== null && isRecord(student.grade) && isValidGrade(student.grade, weights);
+  })) {
+    throw new GradeApiError("INVALID_GRADE_RESPONSE", "成績データの形式が正しくありません。", 502);
+  }
+
+  return value as GradesResponse;
+}
+
 export const destinationForApiError = (error: unknown) => {
   if (!(error instanceof GradeApiError)) return null;
   if (error.code === "MUST_CHANGE_PASSWORD") return "/change-password";
@@ -97,7 +146,7 @@ export async function getTeacherSubjects(year?: number, signal?: AbortSignal) {
 export async function getTeacherGrades(subjectId: string, term: Term, year?: number, signal?: AbortSignal) {
   const response = await apiClient.api.teacher.subjects[":id"].grades.$get({ param: { id: subjectId }, query: { term: String(term), ...(year ? { year: String(year) } : {}) } }, { init: { signal } });
   if (!response.ok) throwApiError(response.status, await response.json());
-  return response.json();
+  return parseTeacherGradesResponse(await response.json());
 }
 
 export async function saveTeacherGrades(subjectId: string, term: Term, grades: Array<{ studentId: string; attendanceRate: number | null; attitude: number | null; assignment: number | null }>) {

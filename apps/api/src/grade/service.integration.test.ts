@@ -105,13 +105,13 @@ describe("D1 grade service integration", () => {
     expect(database.query("SELECT final_score_numerator, letter_grade FROM grades").get()).toEqual({ final_score_numerator: 9000, letter_grade: "S" });
     expect((await service.finalize("admin-1", "subject-1", 1)).alreadyFinalized).toBeFalse();
     expect(database.query("SELECT count(*) AS count FROM audit_logs WHERE action = 'subject_term_finalized'").get()).toEqual({ count: 1 });
-    await expect(service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 70, attitude: 0, assignment: 0 }])).rejects.toMatchObject({ code: "TERM_NOT_EDITABLE" } satisfies Partial<GradeDomainError>);
+    await expect(service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 70, attitude: 1, assignment: 1 }])).rejects.toMatchObject({ code: "TERM_NOT_EDITABLE" } satisfies Partial<GradeDomainError>);
     expect(database.query("SELECT attendance_rate FROM grades").get()).toEqual({ attendance_rate: 80 });
   });
 
   it("sets sticky F history only when a term is finalized, not for a teacher draft", async () => {
     const { database, service } = setup();
-    await service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 50, attitude: 0, assignment: 0 }]);
+    await service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 50, attitude: 1, assignment: 1 }]);
     const gradeId = String((database.query("SELECT id FROM grades WHERE student_id='student-1'").get() as { id: string }).id);
     expect(database.query("SELECT has_failed_history FROM students WHERE id='student-1'").get()).toEqual({ has_failed_history: 0 });
     expect((await service.teacherGrades("teacher-1", "subject-1", 1)).students[0]?.hasFailedHistory).toBeFalse();
@@ -123,7 +123,7 @@ describe("D1 grade service integration", () => {
     expect((await service.adminGrades({ limit: 20 })).items[0]?.latest.hasFailedHistory).toBeTrue();
     database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized,finalized_by_user_id,finalized_at) VALUES ('subject-1',2,1,'admin-1',1)");
     expect((await service.teacherGrades("teacher-1", "subject-1", 1)).students[0]?.hasFailedHistory).toBeTrue();
-    const retake = await service.createRetake("admin-1", gradeId, { attendanceRate: 70, attitude: 0, assignment: 0 }, "再試験許可");
+    const retake = await service.createRetake("admin-1", gradeId, { attendanceRate: 70, attitude: 1, assignment: 1 }, "再試験許可");
     expect((await service.teacherGrades("teacher-1", "subject-1", 1)).students[0]?.hasFailedHistory).toBeTrue();
     expect((await service.adminGradeDetail(retake.id)).attempts[0]?.hasFailedHistory).toBeTrue();
     expect((await service.adminGrades({ limit: 20 })).items[0]?.latest).toMatchObject({ id: retake.id, letterGrade: "B", hasFailedHistory: true });
@@ -145,10 +145,78 @@ describe("D1 grade service integration", () => {
     await expect(service.teacherSubjects("teacher-1", 2022)).rejects.toMatchObject({ code: "INVALID_ACADEMIC_YEAR" } satisfies Partial<GradeDomainError>);
   });
 
+  it("reopens term 1 with an unfinalized term 2 status, but never after term 2 is finalized or graded", async () => {
+    const permitted = setup();
+    await permitted.service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 100, attitude: 10, assignment: 10 }]);
+    await permitted.service.finalize("admin-1", "subject-1", 1);
+    permitted.database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized) VALUES ('subject-1',2,0)");
+    await expect(permitted.service.reopen("admin-1", "subject-1", 1, "訂正が必要です")).resolves.toEqual({ reopened: true });
+    expect(permitted.database.query("SELECT count(*) AS count FROM audit_logs WHERE action='subject_term_reopened'").get()).toEqual({ count: 1 });
+    await expect(permitted.service.reopen("admin-1", "subject-1", 1, "重複操作")).rejects.toMatchObject({ code: "REOPEN_PRECONDITION_FAILED", status: 409 });
+    expect(permitted.database.query("SELECT count(*) AS count FROM audit_logs WHERE action='subject_term_reopened'").get()).toEqual({ count: 1 });
+
+    const finalized = setup();
+    await finalized.service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 100, attitude: 10, assignment: 10 }]);
+    await finalized.service.finalize("admin-1", "subject-1", 1);
+    finalized.database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized) VALUES ('subject-1',2,1)");
+    await expect(finalized.service.reopen("admin-1", "subject-1", 1, "訂正が必要です")).rejects.toMatchObject({ code: "REOPEN_PRECONDITION_FAILED", status: 409 });
+    expect(finalized.database.query("SELECT count(*) AS count FROM audit_logs WHERE action='subject_term_reopened'").get()).toEqual({ count: 0 });
+
+    const graded = setup();
+    await graded.service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 100, attitude: 10, assignment: 10 }]);
+    await graded.service.finalize("admin-1", "subject-1", 1);
+    graded.database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized) VALUES ('subject-1',2,0); INSERT INTO grades VALUES ('term-2-draft','student-1','subject-1',2026,2,1,80,1,1,8000,100,'A','teacher-1','teacher-1',0,0)");
+    await expect(graded.service.reopen("admin-1", "subject-1", 1, "訂正が必要です")).rejects.toMatchObject({ code: "REOPEN_PRECONDITION_FAILED", status: 409 });
+    expect(graded.database.query("SELECT count(*) AS count FROM audit_logs WHERE action='subject_term_reopened'").get()).toEqual({ count: 0 });
+  });
+
+  it("uses the effective academic-year status for grade rosters, writes, and finalization", async () => {
+    const { database, service } = setup();
+    database.exec(`
+      INSERT INTO students (id,student_number,name,course_id,enrollment_year,status,status_effective_academic_year) VALUES
+        ('student-suspended','2','休学中','course-1',2026,'suspended',2026),
+        ('student-withdrawn','3','退学済み','course-1',2026,'withdrawn',2026);
+      INSERT INTO student_status_history VALUES
+        ('suspended-2026','student-suspended','suspended',2026,1),
+        ('withdrawn-2026','student-withdrawn','withdrawn',2026,1);
+    `);
+
+    const current = await service.teacherGrades("teacher-1", "subject-1", 1);
+    expect(current.students.map(({ id, status, editable }) => ({ id, status, editable }))).toEqual([
+      { id: "student-1", status: "enrolled", editable: true },
+      { id: "student-suspended", status: "suspended", editable: false },
+      { id: "student-withdrawn", status: "withdrawn", editable: false },
+    ]);
+    await expect(service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-suspended", attendanceRate: 80, attitude: 8, assignment: 8 }])).rejects.toMatchObject({ code: "TERM_NOT_EDITABLE", status: 409 });
+    await service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 80, attitude: 8, assignment: 8 }]);
+    await expect(service.finalize("admin-1", "subject-1", 1)).resolves.toMatchObject({ eligibleStudents: 1 });
+
+    database.exec(`
+      INSERT INTO academic_years VALUES (2027, 1);
+      UPDATE academic_years SET is_current=0 WHERE year=2026;
+      INSERT INTO subjects (id,academic_year,name,grade_level,teacher_user_id) VALUES ('subject-next',2027,'進級科目',2,'teacher-1');
+      INSERT INTO subject_courses VALUES ('subject-next','course-1');
+      INSERT INTO grade_weights (id,subject_id,term,attendance_weight,attitude_weight,assignment_weight) VALUES ('weight-next','subject-next',1,100,0,0);
+    `);
+    const followingYear = await service.teacherGrades("teacher-1", "subject-next", 1);
+    expect(followingYear.students.map(({ id, status, editable }) => ({ id, status, editable }))).toEqual([
+      { id: "student-1", status: "enrolled", editable: true },
+      { id: "student-suspended", status: "suspended", editable: false },
+    ]);
+  });
+
+  it("rejects zero for new attitude and assignment writes while retaining legacy zero grades for recalculation", async () => {
+    const { database, service } = setup();
+    await expect(service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 50, attitude: 0, assignment: 1 }])).rejects.toMatchObject({ code: "INVALID_ATTITUDE", status: 400 });
+    database.exec("INSERT INTO grades VALUES ('legacy-zero','student-1','subject-1',2026,1,1,50,0,0,5000,100,'F','teacher-1','teacher-1',0,0)");
+    await service.saveTeacherWeights("teacher-1", "subject-1", 1, { attendanceWeight: 100, attitudeWeight: 0, assignmentWeight: 0 });
+    expect(database.query("SELECT attitude, assignment, final_score_numerator, letter_grade FROM grades WHERE id='legacy-zero'").get()).toEqual({ attitude: 0, assignment: 0, final_score_numerator: 5000, letter_grade: "F" });
+  });
+
   it("keeps a failed finalized attempt immutable by creating a passing retake and exposes failed history", async () => {
     const { database, service } = setup();
     database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized,finalized_by_user_id,finalized_at) VALUES ('subject-1',1,1,'admin-1',1); INSERT INTO grades VALUES ('grade-f','student-1','subject-1',2026,1,1,50,0,0,5000,100,'F','teacher-1','teacher-1',0,0)");
-    const retake = await service.createRetake("admin-1", "grade-f", { attendanceRate: 70, attitude: 0, assignment: 0 }, "再試験許可");
+    const retake = await service.createRetake("admin-1", "grade-f", { attendanceRate: 70, attitude: 1, assignment: 1 }, "再試験許可");
     expect(retake).toMatchObject({ attempt: 2, letterGrade: "B" });
     expect(database.query("SELECT letter_grade FROM grades WHERE id='grade-f'").get()).toEqual({ letter_grade: "F" });
     expect(database.query("SELECT has_failed_history FROM students WHERE id='student-1'").get()).toEqual({ has_failed_history: 1 });
@@ -161,7 +229,7 @@ describe("D1 grade service integration", () => {
   it("rejects retakes for a non-F or stale attempt and records no audit", async () => {
     const { database, service } = setup();
     database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized,finalized_by_user_id,finalized_at) VALUES ('subject-1',1,1,'admin-1',1); INSERT INTO grades VALUES ('grade-pass','student-1','subject-1',2026,1,1,70,0,0,7000,100,'B','teacher-1','teacher-1',0,0)");
-    await expect(service.createRetake("admin-1", "grade-pass", { attendanceRate: 80, attitude: 0, assignment: 0 }, "理由")).rejects.toMatchObject({ code: "RETAKE_NOT_AVAILABLE" });
+    await expect(service.createRetake("admin-1", "grade-pass", { attendanceRate: 80, attitude: 1, assignment: 1 }, "理由")).rejects.toMatchObject({ code: "RETAKE_NOT_AVAILABLE" });
     expect(database.query("SELECT count(*) AS count FROM audit_logs WHERE action='grade_retake_created'").get()).toEqual({ count: 0 });
   });
 
@@ -169,8 +237,8 @@ describe("D1 grade service integration", () => {
     const { database, service } = setup();
     database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized,finalized_by_user_id,finalized_at) VALUES ('subject-1',1,1,'admin-1',1); INSERT INTO grades VALUES ('grade-f','student-1','subject-1',2026,1,1,50,0,0,5000,100,'F','teacher-1','teacher-1',0,0)");
     const outcomes = await Promise.allSettled([
-      service.createRetake("admin-1", "grade-f", { attendanceRate: 70, attitude: 0, assignment: 0 }, "再試験許可"),
-      service.createRetake("admin-1", "grade-f", { attendanceRate: 80, attitude: 0, assignment: 0 }, "再試験許可"),
+      service.createRetake("admin-1", "grade-f", { attendanceRate: 70, attitude: 1, assignment: 1 }, "再試験許可"),
+      service.createRetake("admin-1", "grade-f", { attendanceRate: 80, attitude: 1, assignment: 1 }, "再試験許可"),
     ]);
     expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
     const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
@@ -182,7 +250,7 @@ describe("D1 grade service integration", () => {
   it("allows an administrator to correct only the latest attempt and audits no free-text reason", async () => {
     const { database, service } = setup();
     database.exec("INSERT INTO grades VALUES ('grade-current','student-1','subject-1',2026,1,1,50,0,0,5000,100,'F','teacher-1','teacher-1',0,0)");
-    await expect(service.correctAdminGrade("admin-1", "grade-current", { attendanceRate: 90, attitude: 0, assignment: 0 }, "配慮事項の詳細")).resolves.toMatchObject({ letterGrade: "S" });
+    await expect(service.correctAdminGrade("admin-1", "grade-current", { attendanceRate: 90, attitude: 1, assignment: 1 }, "配慮事項の詳細")).resolves.toMatchObject({ letterGrade: "S" });
     const audit = database.query("SELECT payload_json FROM audit_logs WHERE action='grade_corrected'").get() as { payload_json: string };
     expect(audit.payload_json).not.toContain("配慮事項");
     expect(audit.payload_json).toContain('"previousGrade":"F"');
@@ -191,9 +259,9 @@ describe("D1 grade service integration", () => {
   it("keeps a finalized correction's F history after a later passing correction", async () => {
     const { database, service } = setup();
     database.exec("INSERT INTO subject_term_statuses (subject_id,term,is_finalized,finalized_by_user_id,finalized_at) VALUES ('subject-1',1,1,'admin-1',1); INSERT INTO grades VALUES ('grade-current','student-1','subject-1',2026,1,1,70,0,0,7000,100,'B','teacher-1','teacher-1',0,0)");
-    await service.correctAdminGrade("admin-1", "grade-current", { attendanceRate: 50, attitude: 0, assignment: 0 }, "確定後の訂正");
+    await service.correctAdminGrade("admin-1", "grade-current", { attendanceRate: 50, attitude: 1, assignment: 1 }, "確定後の訂正");
     expect(database.query("SELECT has_failed_history FROM students WHERE id='student-1'").get()).toEqual({ has_failed_history: 1 });
-    await service.correctAdminGrade("admin-1", "grade-current", { attendanceRate: 80, attitude: 0, assignment: 0 }, "再訂正");
+    await service.correctAdminGrade("admin-1", "grade-current", { attendanceRate: 80, attitude: 1, assignment: 1 }, "再訂正");
     expect(database.query("SELECT has_failed_history FROM students WHERE id='student-1'").get()).toEqual({ has_failed_history: 1 });
   });
 });

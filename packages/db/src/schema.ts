@@ -49,6 +49,22 @@ export const session = sqliteTable(
   (table) => [index("session_token_idx").on(table.token), index("session_user_id_idx").on(table.userId)],
 );
 
+/**
+ * The one session token currently allowed to act for each user. Sessions remain in Better
+ * Auth's session table for its own lifecycle management; this marker is the authorization
+ * authority that makes a newly issued session immediately supersede every older one.
+ */
+export const activeUserSessions = sqliteTable(
+  "active_user_sessions",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sessionToken: text("session_token").notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(unixNow),
+  },
+);
+
 export const account = sqliteTable(
   "account",
   {

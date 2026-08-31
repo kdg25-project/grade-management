@@ -15,8 +15,3 @@ export const shouldClearPasswordChangeRequirement = (path: string | undefined, r
 /** Runs only from Better Auth's successful `onPasswordReset` callback. */
 export const createPasswordResetCompletionHandler = (clearPasswordRequirement: (userId: string) => Promise<void>) =>
   async ({ user }: { user: { id: string } }) => clearPasswordRequirement(user.id);
-
-export const oldSessionWhere = (userId: string, token: string) => [
-  { field: "userId", value: userId },
-  { field: "token", operator: "ne" as const, value: token },
-];

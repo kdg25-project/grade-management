@@ -76,6 +76,80 @@ describe("D1 admin master service", () => {
     await expect(service.createStudent("admin", { studentNumber: "100", name: "別人", nameKana: "ベツジン", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear: 2026 })).rejects.toMatchObject({ code: "DUPLICATE_STUDENT_NUMBER" });
   });
 
+  it("accepts status changes only for the server-resolved current academic year without historical mutations", async () => {
+    const { database, service } = setup();
+    const student = await service.createStudent("admin", { studentNumber: "status-year", name: "学生", nameKana: "ガクセイ", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear: 2026 });
+    for (const requestedYear of [2025, 2027]) {
+      await expect(service.changeStudentStatus("admin", student.id, "suspended", requestedYear, "履歴を変えない")).rejects.toMatchObject({ code: "STATUS_EFFECTIVE_YEAR_NOT_CURRENT", status: 409 });
+      expect(database.query("SELECT status, status_effective_academic_year FROM students WHERE id=?").get(student.id)).toEqual({ status: "enrolled", status_effective_academic_year: null });
+      expect(database.query("SELECT count(*) AS count FROM student_status_history WHERE student_id=?").get(student.id)).toEqual({ count: 0 });
+      expect(database.query("SELECT count(*) AS count FROM audit_logs WHERE action='student_status_changed' AND entity_id=?").get(student.id)).toEqual({ count: 0 });
+    }
+    await expect(service.changeStudentStatus("admin", student.id, "suspended", 2026, "現在年度の休学")).resolves.toEqual({ id: student.id, status: "suspended" });
+    expect(database.query("SELECT status, status_effective_academic_year FROM students WHERE id=?").get(student.id)).toEqual({ status: "suspended", status_effective_academic_year: 2026 });
+    expect(database.query("SELECT count(*) AS count FROM student_status_history WHERE student_id=?").get(student.id)).toEqual({ count: 1 });
+    expect(database.query("SELECT count(*) AS count FROM audit_logs WHERE action='student_status_changed' AND entity_id=?").get(student.id)).toEqual({ count: 1 });
+  });
+
+  it("does not write a status change when the current academic year changes before its batch", async () => {
+    let switchYearBeforeBatch = false;
+    let database!: Database;
+    const setupResult = setup(() => {
+      if (!switchYearBeforeBatch) return;
+      switchYearBeforeBatch = false;
+      database.exec("UPDATE academic_years SET is_current=0 WHERE year=2026; INSERT INTO academic_years VALUES (2027,1,'admin',0,0,0)");
+    });
+    database = setupResult.database;
+    const student = await setupResult.service.createStudent("admin", { studentNumber: "status-race", name: "学生", nameKana: "ガクセイ", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear: 2026 });
+    switchYearBeforeBatch = true;
+
+    await expect(setupResult.service.changeStudentStatus("admin", student.id, "suspended", 2026, "年度切替競合")).rejects.toMatchObject({ code: "STATUS_EFFECTIVE_YEAR_NOT_CURRENT", status: 409 });
+    expect(database.query("SELECT status, status_effective_academic_year FROM students WHERE id=?").get(student.id)).toEqual({ status: "enrolled", status_effective_academic_year: null });
+    expect(database.query("SELECT count(*) AS count FROM student_status_history WHERE student_id=?").get(student.id)).toEqual({ count: 0 });
+    expect(database.query("SELECT count(*) AS count FROM audit_logs WHERE action='student_status_changed' AND entity_id=?").get(student.id)).toEqual({ count: 0 });
+  });
+
+  it("calculates and filters student grades using the requested academic year", async () => {
+    const { database, service } = setup();
+    await service.selectCurrentYear("admin", 2027);
+    await service.createStudent("admin", { studentNumber: "2026-1", name: "進級学生", nameKana: "シンキュウガクセイ", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear: 2026 });
+
+    await expect(service.students({ page: 1, pageSize: 20 })).resolves.toMatchObject({ currentAcademicYear: 2027, academicYear: 2027, items: [{ gradeLevel: 2 }] });
+    await expect(service.students({ page: 1, pageSize: 20, academicYear: 2026, gradeLevel: 1 })).resolves.toMatchObject({ currentAcademicYear: 2027, academicYear: 2026, total: 1, items: [{ gradeLevel: 1 }] });
+    await expect(service.students({ page: 1, pageSize: 20, academicYear: 2026, gradeLevel: 2 })).resolves.toMatchObject({ academicYear: 2026, total: 0, items: [] });
+    expect(database.query("SELECT count(*) AS count FROM students").get()).toEqual({ count: 1 });
+  });
+
+  it("returns a bounded, historical student status snapshot for the requested academic year", async () => {
+    const { database, service } = setup();
+    await service.selectCurrentYear("admin", 2027);
+    const create = (studentNumber: string, enrollmentYear: number) => service.createStudent("admin", { studentNumber, name: studentNumber, nameKana: "ガクセイ", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear });
+    const secondYear = await create("2026", 2026);
+    const futureStatus = await create("2026-future-status", 2026);
+    const future = await create("2028-future", 2028);
+    const outsideThreeYears = await create("2024-outside", 2024);
+    await create("2025-third", 2025);
+    const withdrawn = await create("2025-withdrawn", 2025);
+    const restored = await create("2025-restored", 2025);
+    database.query("INSERT INTO student_status_history VALUES (?, ?, ?, ?, ?, ?, ?)").run("withdrawn-2026", withdrawn.id, "withdrawn", 2026, 10, "admin", "退学");
+    database.query("INSERT INTO student_status_history VALUES (?, ?, ?, ?, ?, ?, ?)").run("restored-2025", restored.id, "suspended", 2025, 10, "admin", "休学");
+    database.query("INSERT INTO student_status_history VALUES (?, ?, ?, ?, ?, ?, ?)").run("restored-2026", restored.id, "enrolled", 2026, 20, "admin", "復学");
+    database.query("UPDATE students SET status='suspended', status_effective_academic_year=2028 WHERE id=?").run(futureStatus.id);
+
+    const current = await service.students({ page: 1, pageSize: 20 });
+    expect(current).toMatchObject({ academicYear: 2027, total: 4 });
+    expect(current.items.find((student) => student.id === secondYear.id)).toMatchObject({ gradeLevel: 2 });
+    expect(current.items.find((student) => student.id === futureStatus.id)).toMatchObject({ status: "enrolled", statusEffectiveAcademicYear: null });
+    expect(current.items.find((student) => student.id === future.id || student.id === outsideThreeYears.id || student.id === withdrawn.id)).toBeUndefined();
+    const inWithdrawalYear = await service.students({ page: 1, pageSize: 20, academicYear: 2026 });
+    expect(inWithdrawalYear.items.find((student) => student.id === withdrawn.id)).toMatchObject({ status: "withdrawn", statusEffectiveAcademicYear: 2026, gradeLevel: 2 });
+    const beforeRestore = await service.students({ page: 1, pageSize: 20, academicYear: 2025, status: "suspended" });
+    expect(beforeRestore).toMatchObject({ total: 1, items: [{ id: restored.id, status: "suspended", statusEffectiveAcademicYear: 2025, gradeLevel: 1 }] });
+    const afterRestore = await service.students({ page: 1, pageSize: 20, academicYear: 2026, status: "enrolled" });
+    expect(afterRestore.items.find((student) => student.id === restored.id)).toMatchObject({ status: "enrolled", statusEffectiveAcademicYear: 2026 });
+    await expect(service.students({ page: 1, pageSize: 20, academicYear: 2027, gradeLevel: 4 as never })).rejects.toMatchObject({ code: "INVALID_GRADE_LEVEL" });
+  });
+
   it("creates a Better Auth credential teacher and subject courses atomically", async () => {
     const { database, service } = setup(); const teacher = await service.createTeacher("admin", { name: "新講師", email: "new@example.test" });
     expect(teacher.temporaryPassword).toBe("Temp!Password99"); expect(database.query("SELECT password FROM account WHERE user_id=?").get(teacher.id)).toEqual({ password: "hash:Temp!Password99" });

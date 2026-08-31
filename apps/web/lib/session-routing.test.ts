@@ -16,6 +16,7 @@ describe("session routing", () => {
     const teacher = { role: "teacher" as const, status: "active" as const, mustChangePassword: false };
     expect(isAllowedRoute("/teacher/subjects", teacher)).toBe(true);
     expect(isAllowedRoute("/admin", teacher)).toBe(false);
+    expect(isAllowedRoute("/administrator", { role: "admin", status: "active", mustChangePassword: false })).toBe(false);
   });
 
   for (const status of ["leave", "retired"] as const) {

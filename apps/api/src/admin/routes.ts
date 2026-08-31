@@ -3,7 +3,7 @@ import { validator } from "hono/validator";
 
 import { requireAuthenticatedUser, requirePasswordChanged, requireRole, type AuthVariables, type SessionReader } from "../authorization";
 import { respondAdminRouteError } from "./route-errors";
-import { AdminDomainError, type AccountStatus, type AdminMasterService, type StudentInput, type StudentStatus, type SubjectInput, validateStudent, validateSubject, validateYear } from "./service";
+import { AdminDomainError, type AccountStatus, type AdminMasterService, type StudentInput, type StudentStatus, type SubjectInput, validateGradeLevel, validateStudent, validateSubject, validateYear } from "./service";
 
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const fail = (c: Parameters<typeof respondAdminRouteError>[0], error: unknown) => respondAdminRouteError(c, error, "master");
@@ -35,7 +35,9 @@ const subjectJson = validator("json", (value, c) => { try { return subjectInput(
 const listQuery = validator("query", (value, c) => { try {
   const number = (name: string, fallback?: number) => { const raw = queryOne(value[name], "INVALID_QUERY", "検索条件を正しく指定してください。"); if (raw === undefined) return fallback; if (!/^\d+$/.test(raw)) throw new AdminDomainError("INVALID_QUERY", "検索条件を正しく指定してください。"); return Number(raw); };
   const status = queryOne(value.status, "INVALID_QUERY", "検索条件を正しく指定してください。"); if (status !== undefined && !["enrolled", "suspended", "withdrawn", "graduated"].includes(status)) throw new AdminDomainError("INVALID_STUDENT_STATUS", "在籍状態を正しく指定してください。");
-  return { page: number("page", 1)!, pageSize: number("pageSize", 20)!, search: queryOne(value.search, "INVALID_QUERY", "検索条件を正しく指定してください。"), courseId: queryOne(value.courseId, "INVALID_QUERY", "検索条件を正しく指定してください。"), enrollmentYear: number("enrollmentYear"), gradeLevel: number("gradeLevel"), status: status as StudentStatus | undefined };
+  const academicYear = number("academicYear");
+  const gradeLevel = number("gradeLevel");
+  return { page: number("page", 1)!, pageSize: number("pageSize", 20)!, academicYear: academicYear === undefined ? undefined : validateYear(academicYear), search: queryOne(value.search, "INVALID_QUERY", "検索条件を正しく指定してください。"), courseId: queryOne(value.courseId, "INVALID_QUERY", "検索条件を正しく指定してください。"), enrollmentYear: number("enrollmentYear"), gradeLevel: gradeLevel === undefined ? undefined : validateGradeLevel(gradeLevel), status: status as StudentStatus | undefined };
 } catch (error) { return fail(c, error); } });
 
 const teachersQuery = validator("query", (value, c) => { try { const status = queryOne(value.status, "INVALID_QUERY", "検索条件を正しく指定してください。"); if (status !== undefined && !["active", "leave", "retired"].includes(status)) throw new AdminDomainError("INVALID_TEACHER_STATUS", "講師の状態を正しく指定してください。"); return { search: queryOne(value.search, "INVALID_QUERY", "検索条件を正しく指定してください。"), status: status as AccountStatus | undefined }; } catch (error) { return fail(c, error); } });

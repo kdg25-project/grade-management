@@ -85,6 +85,13 @@
       "when": 1786618306817,
       "tag": "0011_lazy_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1788161350330,
+      "tag": "0012_mixed_robin_chapel",
+      "breakpoints": true
     }
   ]
 }

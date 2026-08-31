@@ -42,6 +42,21 @@ describe("admin master routes", () => {
     expect(await response.json()).toMatchObject({ error: { code: "INVALID_STUDENT" } });
   });
 
+  it("validates and forwards the student-list academic year", async () => {
+    let received: unknown = null;
+    const response = await app(session, { ...masterService, students: async (query) => { received = query; return { currentAcademicYear: 2027, academicYear: 2026, total: 0, items: [] }; } }).request("/api/admin/students?academicYear=2026&gradeLevel=1");
+    expect(response.status).toBe(200);
+    expect(received).toMatchObject({ academicYear: 2026, gradeLevel: 1 });
+    const invalid = await app().request("/api/admin/students?academicYear=1999");
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: { code: "INVALID_ACADEMIC_YEAR" } });
+    for (const gradeLevel of ["0", "4"]) {
+      const invalidGrade = await app().request(`/api/admin/students?gradeLevel=${gradeLevel}`);
+      expect(invalidGrade.status).toBe(400);
+      expect(await invalidGrade.json()).toMatchObject({ error: { code: "INVALID_GRADE_LEVEL" } });
+    }
+  });
+
   it("returns the temporary password only in the successful create response", async () => {
     const response = await app().request("/api/admin/teachers", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "講師", email: "teacher@example.test" }) });
     expect(response.status).toBe(201);

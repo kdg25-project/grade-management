@@ -14,6 +14,7 @@ const migrationFiles = [
   new URL("../drizzle/0009_quiet_mimic.sql", import.meta.url),
   new URL("../drizzle/0010_unique_mister_fear.sql", import.meta.url),
   new URL("../drizzle/0011_lazy_star_brand.sql", import.meta.url),
+  new URL("../drizzle/0012_mixed_robin_chapel.sql", import.meta.url),
 ];
 
 async function createMigratedDatabase() {
@@ -45,6 +46,40 @@ async function createMigratedDatabase() {
 }
 
 describe("generated D1 migration constraints", () => {
+  it("backfills one deterministic active session for every existing user", async () => {
+    const database = new Database(":memory:");
+    database.exec("PRAGMA foreign_keys = ON;");
+    try {
+      for (const migrationFile of migrationFiles.slice(0, -1)) {
+        const migration = await Bun.file(migrationFile).text();
+        for (const statement of migration.split("--> statement-breakpoint")) {
+          if (statement.trim()) database.exec(statement);
+        }
+      }
+      database.exec(`
+        INSERT INTO user (id, name, email) VALUES ('user-1', '利用者', 'user-1@example.test'), ('user-2', '利用者2', 'user-2@example.test'), ('user-3', '利用者3', 'user-3@example.test');
+        INSERT INTO session (id, user_id, token, expires_at, created_at, updated_at)
+          VALUES
+            ('session-a', 'user-1', 'token-old', 9999999999, 10, 20),
+            ('session-b', 'user-1', 'token-new', 9999999999, 11, 21),
+            ('session-c', 'user-2', 'token-c', 9999999999, 30, 30),
+            ('session-d', 'user-2', 'token-d', 9999999999, 30, 30),
+            ('session-e', 'user-1', 'token-expired-newer', 1, 12, 22),
+            ('session-f', 'user-3', 'token-expired-only', 1, 40, 40);
+      `);
+      const migration = await Bun.file(migrationFiles.at(-1)!).text();
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        if (statement.trim()) database.exec(statement);
+      }
+      expect(database.query("SELECT user_id, session_token, updated_at FROM active_user_sessions ORDER BY user_id").all()).toEqual([
+        { user_id: "user-1", session_token: "token-new", updated_at: 21 },
+        { user_id: "user-2", session_token: "token-d", updated_at: 30 },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
   it("does not persist partial final-score values under SQLite CHECK semantics", async () => {
     const database = await createMigratedDatabase();
     try {

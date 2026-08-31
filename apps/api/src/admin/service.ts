@@ -25,10 +25,11 @@ export type SubjectInput = { name: string; gradeLevel: 1 | 2 | 3; teacherUserId:
 export type StudentListItem = { id: string; studentNumber: string; name: string; nameKana: string; birthDate: string; gender: string; email: string | null; phone: string | null; postalCode: string | null; address: string | null; courseId: string; courseName: string; enrollmentYear: number; status: StudentStatus; statusEffectiveAcademicYear: number | null; gradeLevel: number };
 export type TeacherListItem = { id: string; name: string; email: string; status: AccountStatus; mustChangePassword: boolean; createdAt: number };
 export type SubjectListItem = { id: string; name: string; academicYear: number; gradeLevel: number; teacherUserId: string; teacherName: string; courseIds: string[]; hasFinalizedTerm: boolean };
+export type StudentListQuery = { page: number; pageSize: number; academicYear?: number; search?: string; courseId?: string; enrollmentYear?: number; gradeLevel?: 1 | 2 | 3; status?: StudentStatus };
 export type AdminMasterService = {
   years(): Promise<{ years: Array<{ year: number; isCurrent: boolean; selectedAt: number | null }> }>;
   selectCurrentYear(actorId: string, year: number): Promise<{ year: number; isCurrent: true; alreadySelected: boolean }>;
-  students(query: { page: number; pageSize: number; search?: string; courseId?: string; enrollmentYear?: number; gradeLevel?: number; status?: StudentStatus }): Promise<{ currentAcademicYear: number; total: number; items: StudentListItem[] }>;
+  students(query: StudentListQuery): Promise<{ currentAcademicYear: number; academicYear: number; total: number; items: StudentListItem[] }>;
   createStudent(actorId: string, input: StudentInput): Promise<{ id: string }>;
   updateStudent(actorId: string, id: string, input: StudentInput): Promise<{ id: string }>;
   changeStudentStatus(actorId: string, id: string, status: StudentStatus, effectiveAcademicYear: number, reason: string): Promise<{ id: string; status: StudentStatus }>;
@@ -62,6 +63,11 @@ export const validateYear = (year: number) => {
   return year;
 };
 
+export const validateGradeLevel = (gradeLevel: number): 1 | 2 | 3 => {
+  if (![1, 2, 3].includes(gradeLevel)) throw new AdminDomainError("INVALID_GRADE_LEVEL", "学年は1〜3を指定してください。");
+  return gradeLevel as 1 | 2 | 3;
+};
+
 export const validateStudent = (input: StudentInput) => {
   const studentNumber = normalized(input.studentNumber);
   if (!studentNumber || studentNumber.length > 64) throw new AdminDomainError("INVALID_STUDENT_NUMBER", "学籍番号を正しく入力してください。");
@@ -74,7 +80,7 @@ export const validateStudent = (input: StudentInput) => {
 
 export const validateSubject = (input: SubjectInput) => {
   if (!normalized(input.name) || normalized(input.name).length > 100) throw new AdminDomainError("INVALID_SUBJECT", "科目名を正しく入力してください。");
-  if (![1, 2, 3].includes(input.gradeLevel)) throw new AdminDomainError("INVALID_GRADE_LEVEL", "学年は1〜3を指定してください。");
+  validateGradeLevel(input.gradeLevel);
   if (!normalized(input.teacherUserId) || input.courseIds.length === 0 || new Set(input.courseIds).size !== input.courseIds.length || input.courseIds.some((id) => !normalized(id))) throw new AdminDomainError("INVALID_COURSES", "対象コースを1つ以上、重複なく指定してください。");
   return { ...input, name: normalized(input.name), teacherUserId: normalized(input.teacherUserId), courseIds: input.courseIds.map(normalized) };
 };
@@ -112,19 +118,24 @@ export class D1AdminMasterService implements AdminMasterService {
     ]);
     return { year, isCurrent: true as const, alreadySelected: false };
   }
-  async students(query: { page: number; pageSize: number; search?: string; courseId?: string; enrollmentYear?: number; gradeLevel?: number; status?: StudentStatus }) {
+  async students(query: StudentListQuery) {
     const currentAcademicYear = await this.currentYear();
+    const academicYear = query.academicYear ?? currentAcademicYear;
+    validateYear(academicYear);
+    if (query.gradeLevel !== undefined) validateGradeLevel(query.gradeLevel);
+    const snapshot = `WITH latest_status_history AS (SELECT student_id, status, effective_academic_year, ROW_NUMBER() OVER (PARTITION BY student_id ORDER BY effective_academic_year DESC, changed_at DESC, id DESC) AS position FROM student_status_history WHERE effective_academic_year <= ?), student_snapshot AS (SELECT s.*, COALESCE(h.status, CASE WHEN s.status_effective_academic_year <= ? THEN s.status ELSE 'enrolled' END) AS snapshot_status, COALESCE(h.effective_academic_year, CASE WHEN s.status_effective_academic_year <= ? THEN s.status_effective_academic_year END) AS snapshot_status_effective_academic_year FROM students s LEFT JOIN latest_status_history h ON h.student_id=s.id AND h.position=1 WHERE s.enrollment_year BETWEEN ? AND ?), visible_students AS (SELECT * FROM student_snapshot WHERE snapshot_status != 'withdrawn' OR snapshot_status_effective_academic_year >= ?)`;
+    const snapshotValues = [academicYear, academicYear, academicYear, academicYear - 2, academicYear, academicYear];
     const clauses: string[] = ["1 = 1"]; const values: unknown[] = [];
     if (query.search) { clauses.push("(s.name LIKE ? OR s.student_number LIKE ?)"); values.push(`%${query.search.trim()}%`, `%${query.search.trim()}%`); }
     if (query.courseId) { clauses.push("s.course_id = ?"); values.push(query.courseId); }
     if (query.enrollmentYear) { clauses.push("s.enrollment_year = ?"); values.push(query.enrollmentYear); }
-    if (query.gradeLevel) { clauses.push("? - s.enrollment_year + 1 = ?"); values.push(currentAcademicYear, query.gradeLevel); }
-    if (query.status) { clauses.push("s.status = ?"); values.push(query.status); }
+    if (query.gradeLevel) { clauses.push("? - s.enrollment_year + 1 = ?"); values.push(academicYear, query.gradeLevel); }
+    if (query.status) { clauses.push("s.snapshot_status = ?"); values.push(query.status); }
     const where = clauses.join(" AND ");
-    const total = await this.first<{ count: number }>(this.database.prepare(`SELECT count(*) AS count FROM students s WHERE ${where}`).bind(...values));
+    const total = await this.first<{ count: number }>(this.database.prepare(`${snapshot} SELECT count(*) AS count FROM visible_students s WHERE ${where}`).bind(...snapshotValues, ...values));
     const page = Math.max(1, query.page); const pageSize = Math.min(100, Math.max(1, query.pageSize));
-    const rows = await this.rows<SqlRow>(this.database.prepare(`SELECT s.id, s.student_number AS studentNumber, s.name, s.name_kana AS nameKana, s.birth_date AS birthDate, s.gender, s.email, s.phone, s.postal_code AS postalCode, s.address, s.course_id AS courseId, c.name AS courseName, s.enrollment_year AS enrollmentYear, s.status, s.status_effective_academic_year AS statusEffectiveAcademicYear, ? - s.enrollment_year + 1 AS gradeLevel FROM students s JOIN courses c ON c.id = s.course_id WHERE ${where} ORDER BY s.student_number LIMIT ? OFFSET ?`).bind(currentAcademicYear, ...values, pageSize, (page - 1) * pageSize));
-    return { currentAcademicYear, total: asNumber(total?.count ?? 0), items: rows.map((row) => ({ id: String(row.id), studentNumber: String(row.studentNumber), name: String(row.name), nameKana: String(row.nameKana), birthDate: String(row.birthDate), gender: String(row.gender), email: row.email == null ? null : String(row.email), phone: row.phone == null ? null : String(row.phone), postalCode: row.postalCode == null ? null : String(row.postalCode), address: row.address == null ? null : String(row.address), courseId: String(row.courseId), courseName: String(row.courseName), enrollmentYear: asNumber(row.enrollmentYear), status: studentStatusFromDb(row.status), statusEffectiveAcademicYear: row.statusEffectiveAcademicYear == null ? null : asNumber(row.statusEffectiveAcademicYear), gradeLevel: asNumber(row.gradeLevel) })) };
+    const rows = await this.rows<SqlRow>(this.database.prepare(`${snapshot} SELECT s.id, s.student_number AS studentNumber, s.name, s.name_kana AS nameKana, s.birth_date AS birthDate, s.gender, s.email, s.phone, s.postal_code AS postalCode, s.address, s.course_id AS courseId, c.name AS courseName, s.enrollment_year AS enrollmentYear, s.snapshot_status AS status, s.snapshot_status_effective_academic_year AS statusEffectiveAcademicYear, ? - s.enrollment_year + 1 AS gradeLevel FROM visible_students s JOIN courses c ON c.id = s.course_id WHERE ${where} ORDER BY s.student_number LIMIT ? OFFSET ?`).bind(...snapshotValues, academicYear, ...values, pageSize, (page - 1) * pageSize));
+    return { currentAcademicYear, academicYear, total: asNumber(total?.count ?? 0), items: rows.map((row) => ({ id: String(row.id), studentNumber: String(row.studentNumber), name: String(row.name), nameKana: String(row.nameKana), birthDate: String(row.birthDate), gender: String(row.gender), email: row.email == null ? null : String(row.email), phone: row.phone == null ? null : String(row.phone), postalCode: row.postalCode == null ? null : String(row.postalCode), address: row.address == null ? null : String(row.address), courseId: String(row.courseId), courseName: String(row.courseName), enrollmentYear: asNumber(row.enrollmentYear), status: studentStatusFromDb(row.status), statusEffectiveAcademicYear: row.statusEffectiveAcademicYear == null ? null : asNumber(row.statusEffectiveAcademicYear), gradeLevel: asNumber(row.gradeLevel) })) };
   }
   private async courseExists(courseId: string) { return Boolean(await this.first(this.database.prepare("SELECT id FROM courses WHERE id = ? LIMIT 1").bind(courseId))); }
   async createStudent(actorId: string, input: StudentInput) {
@@ -147,11 +158,20 @@ export class D1AdminMasterService implements AdminMasterService {
   async changeStudentStatus(actorId: string, id: string, status: StudentStatus, effectiveAcademicYear: number, reason: string) {
     if (!isStatus(status) || !normalized(reason)) throw new AdminDomainError("INVALID_STATUS_CHANGE", "在籍状態・適用年度・理由を入力してください。");
     validateYear(effectiveAcademicYear);
+    if (effectiveAcademicYear !== await this.currentYear()) {
+      throw new AdminDomainError("STATUS_EFFECTIVE_YEAR_NOT_CURRENT", "在籍状態は現在年度にのみ変更できます。", 409);
+    }
     const timestamp = now(); const result = await this.database.batch([
-      this.database.prepare("UPDATE students SET status=?, status_effective_academic_year=?, status_changed_at=?, status_changed_by_user_id=?, updated_at=? WHERE id=?").bind(status, effectiveAcademicYear, timestamp, actorId, timestamp, id),
+      this.database.prepare("UPDATE students SET status=?, status_effective_academic_year=?, status_changed_at=?, status_changed_by_user_id=?, updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM academic_years WHERE year=? AND is_current=1)").bind(status, effectiveAcademicYear, timestamp, actorId, timestamp, id, effectiveAcademicYear),
       this.database.prepare("INSERT INTO student_status_history (id, student_id, status, effective_academic_year, changed_at, changed_by_user_id, reason) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1").bind(this.newId(), id, status, effectiveAcademicYear, timestamp, actorId, normalized(reason)),
       this.database.prepare("INSERT INTO audit_logs (id, actor_user_id, action, entity_type, entity_id, academic_year, payload_json) SELECT ?, ?, 'student_status_changed', 'student', ?, ?, ? WHERE changes() = 1").bind(this.newId(), actorId, id, effectiveAcademicYear, JSON.stringify({ status, effectiveAcademicYear })),
-    ]); if ((result[0] as { meta: { changes: number } }).meta.changes !== 1) throw new AdminDomainError("STUDENT_NOT_FOUND", "学生が見つかりません。", 404); return { id, status };
+    ]);
+    if ((result[0] as { meta: { changes: number } }).meta.changes !== 1) {
+      const stillCurrent = await this.first<{ year: number }>(this.database.prepare("SELECT year FROM academic_years WHERE year=? AND is_current=1 LIMIT 1").bind(effectiveAcademicYear));
+      if (!stillCurrent) throw new AdminDomainError("STATUS_EFFECTIVE_YEAR_NOT_CURRENT", "在籍状態は現在年度にのみ変更できます。", 409);
+      throw new AdminDomainError("STUDENT_NOT_FOUND", "学生が見つかりません。", 404);
+    }
+    return { id, status };
   }
   async teachers(query: { search?: string; status?: AccountStatus }) {
     return this.accounts("teacher", query);

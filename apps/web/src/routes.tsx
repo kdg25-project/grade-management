@@ -2,7 +2,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-r
 
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { LoginForm } from "@/components/login-form";
-import { PasswordResetRequestForm, ResetPasswordForm } from "@/components/password-reset-forms";
+import { ResetPasswordForm } from "@/components/password-reset-forms";
 import { PasswordChangeForm } from "@/components/password-change-form";
 import { GradeDetail } from "@/components/grade-detail";
 import { SubjectsPage } from "@/components/teacher-subjects";
@@ -12,7 +12,9 @@ import { AdminRolloverPage } from "@/components/admin-rollover-page";
 import { AdminGradeExportPage } from "@/components/admin-grade-export-page";
 import { AdminImportPage } from "@/components/admin-import-page";
 import { AdminGradeSearchPage } from "@/components/admin-grade-search";
+import { SessionIdleLogout } from "@/components/session-idle-logout";
 import { authClient } from "@/lib/auth-client";
+import { isIdleSessionLocked } from "@/lib/idle-coordinator";
 import { destinationForUser, isAllowedRoute } from "@/lib/session-routing";
 
 function SessionPending() {
@@ -28,21 +30,26 @@ function ProtectedRoute({ children }: Readonly<{ children: React.ReactNode }>) {
   const { data, error, isPending } = authClient.useSession();
   if (isPending) return <SessionPending />;
   if (error) return <SessionError />;
-  if (!data) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!data) return <Navigate to="/login" replace state={{ from: { pathname: location.pathname, search: location.search } }} />;
   if (data.user.status !== "active") {
-    return location.pathname === "/account-inactive" ? <>{children}</> : <Navigate to="/account-inactive" replace />;
+    const page = location.pathname === "/account-inactive" ? children : <Navigate to="/account-inactive" replace />;
+    return <SessionIdleLogout sessionKey={data.session.id}>{page}</SessionIdleLogout>;
   }
   if (location.pathname === "/account-inactive") return <Navigate to={destinationForUser(data.user)} replace />;
   if (!isAllowedRoute(location.pathname, data.user)) return <Navigate to={destinationForUser(data.user)} replace />;
-  return <>{children}</>;
+  return <SessionIdleLogout sessionKey={data.session.id}>{children}</SessionIdleLogout>;
 }
 
 function LoginPage() {
+  const { data } = authClient.useSession();
+  if (data && !isIdleSessionLocked(data.session.id)) {
+    return <Navigate to={destinationForUser(data.user)} replace />;
+  }
   return <main className="loginPage"><section className="loginPanel" aria-labelledby="login-title"><Link className="loginBrand" to="/login">SANSUN学園<span>成績管理システム</span></Link><p className="sectionEyebrow">講師ログイン</p><h1 id="login-title">成績入力をはじめる</h1><p className="pageLead">登録されているメールアドレスとパスワードを入力してください。</p><LoginForm /><p className="resetLink"><Link to="/forgot-password">パスワードをお忘れですか？</Link></p><aside className="loginHelp"><strong>ログインできないときは</strong><p>パスワードの再設定やアカウントの確認は、教務担当へお問い合わせください。</p></aside></section></main>;
 }
 
 function ForgotPasswordPage() {
-  return <main className="loginPage"><section className="loginPanel" aria-labelledby="forgot-password-title"><Link className="loginBrand" to="/login">SANSUN学園<span>成績管理システム</span></Link><p className="sectionEyebrow">パスワード再設定</p><h1 id="forgot-password-title">再設定メールを送信</h1><p className="pageLead">登録済みのメールアドレスを入力してください。</p><PasswordResetRequestForm /><p className="resetLink"><Link to="/login">ログインに戻る</Link></p></section></main>;
+  return <main className="loginPage"><section className="loginPanel" aria-labelledby="forgot-password-title"><Link className="loginBrand" to="/login">SANSUN学園<span>成績管理システム</span></Link><p className="sectionEyebrow">ログインのお困りごと</p><h1 id="forgot-password-title">教務担当へお問い合わせください</h1><p className="pageLead">パスワードの再設定は、専任職員が本人確認後にご案内します。登録メールアドレスと氏名を添えて教務担当へ連絡してください。</p><p className="resetLink"><Link to="/login">ログインに戻る</Link></p></section></main>;
 }
 
 function ResetPasswordPage() {

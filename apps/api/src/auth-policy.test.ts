@@ -4,7 +4,6 @@ import { APIError } from "better-auth/api";
 import {
   isSuccessfulAuthResponse,
   createPasswordResetCompletionHandler,
-  oldSessionWhere,
   rejectsSignIn,
   shouldClearPasswordChangeRequirement,
 } from "./auth-policy";
@@ -23,13 +22,6 @@ describe("Better Auth authorization hooks", () => {
     expect(shouldClearPasswordChangeRequirement("/change-password", failure)).toBe(false);
     expect(shouldClearPasswordChangeRequirement("/change-password", { status: true })).toBe(true);
     expect(shouldClearPasswordChangeRequirement("/reset-password", { status: true })).toBe(false);
-  });
-
-  it("uses an exact filter that retains the newly created session", () => {
-    expect(oldSessionWhere("user-1", "new-token")).toEqual([
-      { field: "userId", value: "user-1" },
-      { field: "token", operator: "ne", value: "new-token" },
-    ]);
   });
 
   it("uses the authoritative user supplied after a successful password reset", async () => {

@@ -1,5 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 
+import type { ActiveUserSessionPolicy } from "./session-policy";
+
 export const userRoles = ["admin", "teacher"] as const;
 export type UserRole = (typeof userRoles)[number];
 
@@ -22,6 +24,19 @@ export type AuthVariables = { authUser: AuthenticatedUser; authSession: AuthSess
 type AuthContext = Context<{ Variables: AuthVariables }>;
 
 export type SessionReader = (headers: Headers) => Promise<AuthSession | null>;
+
+/** Fail closed when a Better Auth session has no current-session marker or the marker store fails. */
+export const isCurrentUserSession = async (
+  session: AuthSession | null,
+  activeUserSessions: ActiveUserSessionPolicy,
+) => {
+  if (!session) return false;
+  try {
+    return await activeUserSessions.permits({ userId: session.user.id, token: session.session.token });
+  } catch {
+    return false;
+  }
+};
 
 const error = (context: AuthContext, status: 401 | 403, code: string) =>
   context.json({ error: { code } }, status);
