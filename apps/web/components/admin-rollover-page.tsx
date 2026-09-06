@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CsvUploadCard } from "@/components/csv-upload-card";
 import { TeacherShell } from "@/components/teacher-shell";
 import { applyRollover, previewRollover, type RolloverPreviewResponse } from "@/lib/admin-api";
 import { GradeApiError } from "@/lib/grade-api";
@@ -11,6 +12,7 @@ const fileKey = (step: number) => ({ 2: "teachersCsv", 3: "grade1SubjectsCsv", 4
 type Draft = { year: string; files: RolloverFiles };
 type FileSlot = keyof RolloverFiles;
 const newDraft = (): Draft => ({ year: "", files: emptyRolloverFiles() });
+const emptyFileNames = (): Record<FileSlot, string | null> => ({ "2": null, "3": null, "4": null, "5": null, "6": null });
 const rolloverStepDescriptions = [
   "新年度を入力して、次の工程へ進みます。",
   "年度更新に含める講師CSVを選択します。",
@@ -22,7 +24,7 @@ const rolloverStepDescriptions = [
 ] as const;
 
 export function AdminRolloverPage() {
-  const [mobile, setMobile] = useState(true); const [step, setStep] = useState(1); const [draft, setDraft] = useState<Draft>(newDraft); const [confirmed, setConfirmedState] = useState<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const [error, setError] = useState<string | null>(null); const [saving, setSaving] = useState(false); const [fileLoading, setFileLoading] = useState<Record<FileSlot, boolean>>({ "2": false, "3": false, "4": false, "5": false, "6": false });
+  const [mobile, setMobile] = useState(true); const [step, setStep] = useState(1); const [draft, setDraft] = useState<Draft>(newDraft); const [fileNames, setFileNames] = useState<Record<FileSlot, string | null>>(emptyFileNames); const [confirmed, setConfirmedState] = useState<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const [error, setError] = useState<string | null>(null); const [saving, setSaving] = useState(false); const [fileLoading, setFileLoading] = useState<Record<FileSlot, boolean>>({ "2": false, "3": false, "4": false, "5": false, "6": false });
   const draftRef = useRef(draft); const confirmedRef = useRef<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const savingRef = useRef(false); const fileLoadingRef = useRef(fileLoading); const fileReadGeneration = useRef<Record<FileSlot, number>>({ "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 }); const previewGeneration = useRef(0); const controller = useRef<AbortController | null>(null); const stepHeadingRef = useRef<HTMLHeadingElement | null>(null); const previousStepRef = useRef(step);
   const loadingFiles = Object.values(fileLoading).some(Boolean); const busy = saving || loadingFiles;
   const setConfirmed = (value: ConfirmedRollover<RolloverPreviewResponse> | null) => { confirmedRef.current = value; setConfirmedState(value); };
@@ -49,7 +51,7 @@ export function AdminRolloverPage() {
       const value = await file.text();
       if (!isCurrentGeneration(generation, fileReadGeneration.current[slot])) return;
       if (value.includes("\uFFFD")) throw new Error("UTF-8形式のCSVを選択してください。");
-      const current = draftRef.current; replaceDraft({ ...current, files: { ...current.files, [slot]: value } });
+      const current = draftRef.current; replaceDraft({ ...current, files: { ...current.files, [slot]: value } }); setFileNames((currentNames) => ({ ...currentNames, [slot]: file.name }));
     } catch (cause) {
       if (isCurrentGeneration(generation, fileReadGeneration.current[slot])) setError(cause instanceof Error ? cause.message : "CSVを読み込めませんでした。");
     } finally {
@@ -77,7 +79,7 @@ export function AdminRolloverPage() {
     if (current.preview.errors.length || !window.confirm("年度更新を一括反映します。続けますか？")) return;
     const idempotencyKey = current.idempotencyKey ?? createIdempotencyKey(); const request = { ...current.snapshot, idempotencyKey }; const retryable = { ...current, idempotencyKey }; setConfirmed(retryable); savingRef.current = true; setSaving(true); setError(null);
     try {
-      await applyRollover(request); const reset = newDraft(); draftRef.current = reset; setDraft(reset); setConfirmed(null); setStep(1); window.alert("年度更新を反映しました。");
+      await applyRollover(request); const reset = newDraft(); draftRef.current = reset; setDraft(reset); setFileNames(emptyFileNames()); setConfirmed(null); setStep(1); window.alert("年度更新を反映しました。");
     } catch (cause) { setError(cause instanceof GradeApiError ? cause.message : "反映に失敗しました。入力内容は保持されています。");
     } finally { savingRef.current = false; setSaving(false); }
   }
@@ -97,7 +99,7 @@ export function AdminRolloverPage() {
       <div className="rolloverCardBody">
         {error ? <p className="formError" role="alert">{error}</p> : null}
         {step === 1 ? <label className="rolloverField">新年度<input value={draft.year} inputMode="numeric" disabled={mobile || busy} onChange={(event) => { if (!savingRef.current && !Object.values(fileLoadingRef.current).some(Boolean)) replaceDraft({ ...draftRef.current, year: event.target.value.replace(/\D/g, "").slice(0, 4) }); }} placeholder="例: 2027" /></label> : null}
-        {keyForFile ? <label className="rolloverField">{rolloverSteps[step - 1]}<input type="file" accept=".csv,text/csv" disabled={mobile || busy} onChange={(event) => void loadFile(step, event.currentTarget.files?.[0])} /><span className="rolloverInputHint" role={fileLoading[String(step) as FileSlot] ? "status" : undefined}>{fileLoading[String(step) as FileSlot] ? "CSVを読み込んでいます…" : draft.files[String(step) as FileSlot] ? "CSVを読み込みました。" : "UTF-8のCSVを選択してください。"}</span></label> : null}
+        {keyForFile ? <div className="rolloverField"><span>{rolloverSteps[step - 1]}</span><CsvUploadCard label={rolloverSteps[step - 1]} disabled={mobile || busy} loaded={Boolean(draft.files[String(step) as FileSlot])} loading={fileLoading[String(step) as FileSlot]} selectedFileName={fileNames[String(step) as FileSlot]} onInvalidSelection={() => setError("CSVファイルは1件のみ選択してください。")} onSelectFile={(file) => void loadFile(step, file)} /></div> : null}
         {saving ? <p className="rolloverBusy" role="status">{step === 6 ? "入力内容を確認しています。" : "年度更新を反映しています。"}</p> : null}
         {step === 7 ? <>{preview ? <div className="auditList"><p>卒業候補: {preview.graduationCandidates}名 / 講師: {preview.teacherCount}名 / 新入生: {preview.studentCount}名</p><p>科目: 1年 {preview.subjectCounts[1]}件、2年 {preview.subjectCounts[2]}件、3年 {preview.subjectCounts[3]}件</p>{preview.errors.length ? <ul>{preview.errors.map((item, index) => <li key={`${item.file}-${index}`}>{item.file} {item.row ? `${item.row}行目` : ""}：{item.reason}</li>)}</ul> : <p className="formSuccess">問題ありません。反映できます。</p>}</div> : <p className="rolloverBusy" role="status">内容を確認しています。</p>}</> : null}
       </div>

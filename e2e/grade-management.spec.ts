@@ -136,6 +136,73 @@ test.describe("grade-management local smoke", () => {
     await expect(page.getByLabel("メールアドレス")).toHaveCount(0);
   });
 
+  test("shows CSV upload cards for selection and drag-and-drop", async ({ page }, testInfo) => {
+    const credentials = await readCredentials();
+    await ensureAdminSession(page, credentials);
+    await page.goto("/admin/imports");
+
+    const input = page.getByLabel("CSVファイル");
+    const card = page.locator(".csvUploadCard");
+    await expect(input).toBeEnabled();
+    await expect(card).toContainText("CSVファイルをドラッグ＆ドロップ");
+    await expect(card).toContainText("または");
+    await expect(card).toContainText("ファイルを選択");
+    await expect(card).toContainText("CSV（UTF-8）を1件選択してください。");
+    await input.setInputFiles({
+      name: "very-long-student-import-file-name-for-wrapping.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(studentImportCsv, "utf8"),
+    });
+    await expect(card).toContainText("選択中:");
+    await expect(card).toContainText("very-long-student-import-file-name-for-wrapping.csv");
+
+    await input.setInputFiles({
+      name: "invalid-replacement.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("invalid \uFFFD csv", "utf8"),
+    });
+    await expect(page.getByRole("alert")).toContainText("UTF-8形式のCSVを選択してください。");
+    await expect(card).toContainText("very-long-student-import-file-name-for-wrapping.csv");
+    await expect(card).not.toContainText("invalid-replacement.csv");
+
+    const dropped = await card.evaluate((element) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["name\\nCSV取込学生"], "dropped.csv", { type: "text/csv" }));
+      const event = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(dropped).toBe(true);
+    await expect(card).toContainText("dropped.csv");
+
+    await card.evaluate((element) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["first"], "first.csv", { type: "text/csv" }));
+      transfer.items.add(new File(["second"], "second.csv", { type: "text/csv" }));
+      element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    });
+    await expect(page.getByRole("alert")).toContainText("CSVファイルは1件のみ選択してください。");
+    await testInfo.attach("desktop-csv-upload-card", { body: await page.screenshot(), contentType: "image/png" });
+
+    await page.goto("/admin/rollover");
+    await page.getByLabel("新年度").fill("2028");
+    await page.getByRole("button", { name: "次へ" }).click();
+    const rolloverInput = page.getByLabel("講師CSV");
+    const rolloverCard = page.locator(".rolloverField .csvUploadCard");
+    await expect(rolloverInput).toBeEnabled();
+    await rolloverInput.setInputFiles({ name: "teachers.csv", mimeType: "text/csv", buffer: Buffer.from("valid", "utf8") });
+    await expect(rolloverCard).toContainText("teachers.csv");
+    await rolloverInput.setInputFiles({ name: "invalid-teachers.csv", mimeType: "text/csv", buffer: Buffer.from("invalid \uFFFD csv", "utf8") });
+    await expect(page.getByRole("alert")).toContainText("UTF-8形式のCSVを選択してください。");
+    await expect(rolloverCard).toContainText("teachers.csv");
+    await expect(rolloverCard).not.toContainText("invalid-teachers.csv");
+
+    await page.goto("/admin/imports");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(input).toBeDisabled();
+    await testInfo.attach("mobile-csv-upload-disabled", { body: await page.screenshot(), contentType: "image/png" });
+  });
+
   test("protects routes and persists grades through finalization and reopen", async ({ page }) => {
     const credentials = await readCredentials();
     const protectedStart = performance.now();
