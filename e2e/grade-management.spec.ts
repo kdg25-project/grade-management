@@ -124,9 +124,9 @@ test.describe("grade-management local smoke", () => {
     const credentials = await readCredentials();
 
     // Activate this fixture account first, then begin the assertion logged out.
-    await signIn(page, credentials.admin);
-    await changeInitialPassword(page, credentials.admin.password, credentials.admin.changedPassword);
-    await expect(page).toHaveURL(/\/admin$/);
+    // Another serial modal regression may already have completed the initial
+    // password change, so accept either fixture state here.
+    await ensureAdminSession(page, credentials);
     await page.context().clearCookies();
     await page.goto("/login");
 
@@ -230,23 +230,28 @@ test.describe("grade-management local smoke", () => {
     const credentials = await readCredentials();
     await ensureAdminSession(page, credentials);
 
-    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
-      await page.setViewportSize(viewport);
-      await page.goto("/admin/subjects");
-      const teacherSelect = page.getByLabel("担当講師");
-      await expect(teacherSelect).toBeVisible();
-      await teacherSelect.evaluate((select) => {
-        const option = document.createElement("option");
-        option.value = "long-teacher-label";
-        option.textContent = "非常に長い講師名（very-long-teacher-address-for-overflow-regression@example.test）";
-        select.append(option);
-        select.value = option.value;
-      });
-      const [selectBox, cardBox] = await Promise.all([teacherSelect.boundingBox(), page.locator(".masterCard").first().boundingBox()]);
-      expect(selectBox).not.toBeNull();
-      expect(cardBox).not.toBeNull();
-      expect(selectBox!.x + selectBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
-    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/admin/subjects");
+    await page.getByRole("button", { name: "科目を登録", exact: true }).click();
+    const subjectDialog = page.getByRole("dialog", { name: "科目を登録" });
+    const teacherSelect = subjectDialog.getByLabel("担当講師");
+    await expect(teacherSelect).toBeVisible();
+    await teacherSelect.evaluate((select) => {
+      const option = document.createElement("option");
+      option.value = "long-teacher-label";
+      option.textContent = "非常に長い講師名（very-long-teacher-address-for-overflow-regression@example.test）";
+      select.append(option);
+      select.value = option.value;
+    });
+    const [selectBox, dialogBox] = await Promise.all([teacherSelect.boundingBox(), subjectDialog.boundingBox()]);
+    expect(selectBox).not.toBeNull();
+    expect(dialogBox).not.toBeNull();
+    expect(selectBox!.x + selectBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width + 1);
+    await page.keyboard.press("Escape");
+    await expect(subjectDialog).toBeHidden();
+    await expect(page.getByRole("button", { name: "科目を登録", exact: true })).toBeFocused();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole("button", { name: "科目を登録", exact: true })).toBeDisabled();
   });
 
   test("protects routes and persists grades through finalization and reopen", async ({ page }) => {
@@ -357,16 +362,16 @@ test.describe("grade-management local smoke", () => {
     const importStarted = performance.now();
     const importPreviewResponse = page.waitForResponse((response) => response.url().includes("/api/admin/imports/preview") && response.request().method() === "POST");
     await page.getByRole("button", { name: "内容を確認する" }).click();
-    await expect(page.getByText("問題ありません。反映できます。", { exact: true })).toBeVisible();
+    const importDialog = page.getByRole("dialog", { name: "CSVの内容を確認" });
+    await expect(importDialog.getByText("問題ありません。反映できます。", { exact: true })).toBeVisible();
     const importPreview = await (await importPreviewResponse).json() as { token: string };
     expect(importPreview.token).toBeTruthy();
-    page.once("dialog", (dialog) => dialog.accept());
     const importApplyResponse = page.waitForResponse((response) => response.url().includes("/api/admin/imports/apply") && response.request().method() === "POST");
-    await page.getByRole("button", { name: "反映する" }).click();
+    await importDialog.getByRole("button", { name: "反映する", exact: true }).click();
     expect((await importApplyResponse).ok()).toBeTruthy();
     expect(performance.now() - importStarted).toBeLessThan(60_000);
     await expect(page.getByRole("status").filter({ hasText: "反映しました。再送は行いません。" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "反映済み" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "内容を確認する" })).toBeDisabled();
     await expect(page.locator(".formSuccess").filter({ hasText: "反映しました。再送は行いません。" })).toHaveCount(0);
 
     await page.goto("/admin/students");
@@ -385,28 +390,32 @@ test.describe("grade-management local smoke", () => {
     });
 
     await page.goto("/admin");
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "開発用データベースの前期を確定する" }).click();
+    await page.getByRole("dialog", { name: /開発用データベースの前期を確定する/u }).getByRole("button", { name: "確定する", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "開発用データベースの前期を確定しました。" })).toBeVisible();
 
     await page.goto("/admin/grades");
     await expect(page.getByRole("heading", { name: "成績と再試験履歴を確認する" })).toBeVisible();
     const initialGradeRow = page.getByRole("row", { name: /開発用 学生.*開発用データベース・前期.*秀.*詳細・修正/u });
     await initialGradeRow.getByRole("button", { name: "詳細・修正" }).click();
-    await expect(page.getByRole("heading", { name: "開発用 学生さん・開発用データベース" })).toBeVisible();
-    await page.getByLabel("出席率").fill("0");
-    await page.getByLabel("授業態度（1〜10）").fill("1");
-    await page.getByLabel("課題（1〜10）").fill("1");
-    await page.getByLabel("理由").fill("E2E: 確定済み評価を再試験対象へ修正");
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "最新成績を修正" }).click();
+    const gradeDialog = page.getByRole("dialog", { name: /開発用 学生さん・開発用データベースの成績を修正/u });
+    await expect(gradeDialog).toBeVisible();
+    await gradeDialog.screenshot({ path: "/private/tmp/grade-admin-grade-modal.png" });
+    await gradeDialog.getByLabel("出席率").fill("0");
+    await gradeDialog.getByLabel("授業態度（1〜10）").fill("1");
+    await gradeDialog.getByLabel("課題（1〜10）").fill("1");
+    await gradeDialog.getByLabel("理由").fill("E2E: 確定済み評価を再試験対象へ修正");
+    await gradeDialog.getByRole("button", { name: "最新成績を修正" }).click();
+    await page.getByRole("dialog", { name: "最新成績を修正" }).getByRole("button", { name: "反映する" }).click();
+    await expect(gradeDialog.getByRole("status").filter({ hasText: "最新成績を修正しました。" })).toBeVisible();
     await expect(page.getByText(/1回目: 不可/u)).toBeVisible();
-    await page.getByLabel("出席率").fill("95");
-    await page.getByLabel("授業態度（1〜10）").fill("9");
-    await page.getByLabel("課題（1〜10）").fill("8");
-    await page.getByLabel("理由").fill("E2E: 確定済みFの再試験合格");
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "再試験を登録" }).click();
+    await gradeDialog.getByLabel("出席率").fill("95");
+    await gradeDialog.getByLabel("授業態度（1〜10）").fill("9");
+    await gradeDialog.getByLabel("課題（1〜10）").fill("8");
+    await gradeDialog.getByLabel("理由").fill("E2E: 確定済みFの再試験合格");
+    await gradeDialog.getByRole("button", { name: "再試験を登録" }).click();
+    await page.getByRole("dialog", { name: "再試験を登録" }).getByRole("button", { name: "反映する" }).click();
+    await expect(gradeDialog.getByRole("status").filter({ hasText: "再試験の成績を登録しました。" })).toBeVisible();
     await expect(page.getByText(/2回目: 秀/u)).toBeVisible();
     await expect(page.getByText(/1回目: 不可/u)).toBeVisible();
 
@@ -457,8 +466,8 @@ test.describe("grade-management local smoke", () => {
     await expect(page.getByRole("status").filter({ hasText: "成績を保存しました。" })).toBeVisible();
 
     await ensureAdminSession(page, credentials);
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "開発用データベースの後期を確定する" }).click();
+    await page.getByRole("dialog", { name: /開発用データベースの後期を確定する/u }).getByRole("button", { name: "確定する", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "開発用データベースの後期を確定しました。" })).toBeVisible();
 
     await ensureTeacherSession(page, credentials);
@@ -466,8 +475,10 @@ test.describe("grade-management local smoke", () => {
     await expect(finalizedSubject.getByText("すべて確定済み", { exact: true })).toHaveCount(1);
 
     await ensureAdminSession(page, credentials);
-    page.once("dialog", (dialog) => dialog.accept("E2E: entry correction requested"));
     await page.getByRole("button", { name: "開発用データベースの後期を再開する" }).click();
+    const reopenDialog = page.getByRole("dialog", { name: /開発用データベースの後期を再開する/u });
+    await reopenDialog.getByLabel("再開理由").fill("E2E: entry correction requested");
+    await reopenDialog.getByRole("button", { name: "再開する", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "開発用データベースの後期を再開しました。" })).toBeVisible();
 
     await page.goto("/admin/audit");
@@ -538,9 +549,9 @@ test.describe("grade-management local smoke", () => {
     expect(studentAfterPreview.body).toEqual(studentBefore.body);
     expect(subjectsAfterPreview.body).toEqual(subjectsBefore.body);
 
-    page.once("dialog", (dialog) => dialog.accept());
     const applyResponse = page.waitForResponse((response) => response.url().includes("/api/admin/rollover/apply") && response.request().method() === "POST");
     await page.getByRole("button", { name: "一括反映する", exact: true }).click();
+    await page.getByRole("dialog", { name: "年度更新を一括反映する" }).getByRole("button", { name: "反映する", exact: true }).click();
     const applied = await applyResponse;
     expect(applied.ok()).toBeTruthy();
     const applyBody = applied.request().postDataJSON();
@@ -627,9 +638,9 @@ test.describe("grade-management local smoke", () => {
     await expect(page.getByText("科目: 1年 0件、2年 0件、3年 1件", { exact: true })).toBeVisible();
     await expect(page.getByText("スキップ: 1年、2年の科目は登録しません。", { exact: true })).toBeVisible();
 
-    page.once("dialog", (dialog) => dialog.accept());
     const applyResponse = page.waitForResponse((response) => response.url().includes("/api/admin/rollover/apply") && response.request().method() === "POST");
     await page.getByRole("button", { name: "一括反映する", exact: true }).click();
+    await page.getByRole("dialog", { name: "年度更新を一括反映する" }).getByRole("button", { name: "反映する", exact: true }).click();
     expect((await applyResponse).ok()).toBeTruthy();
 
     const subjectsAfter = await getAuthenticatedJson(page, `/api/admin/master/subjects?year=${skippedRollover.targetYear}`);

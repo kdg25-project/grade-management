@@ -40,12 +40,6 @@ h3 { margin: 0; font-size: 20px; }
 .successToast button, .errorToast button, .infoToast button { min-height: 34px; flex: 0 0 auto; padding: 5px 9px; border: 1px solid #57906f; border-radius: 6px; background: #fff; color: #245c3d; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
 .successToast button:hover, .errorToast button:hover, .infoToast button:hover { background: #dff0e5; }
 @media (prefers-reduced-motion: no-preference) { .successToast, .errorToast, .infoToast { animation: successToastEnter .16s ease-out; } }
-.errorToast { border-color: #b93b35; border-left-color: #9f2b27; background: #fff3f2; color: #882f2b; }
-.errorToast button { border-color: #c67a75; color: #882f2b; }
-.errorToast button:hover { background: #ffe4e1; }
-.infoToast { border-color: #3e6e9d; border-left-color: #295e91; background: #eef6fd; color: #254f79; }
-.infoToast button { border-color: #7296b7; color: #254f79; }
-.infoToast button:hover { background: #e1f0fc; }
 @keyframes successToastEnter { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 .resetLink { margin: 20px 0 0; text-align: center; font-size: 14px; font-weight: 700; }
 .resetLink a { color: #176443; }
@@ -171,8 +165,9 @@ h3 { margin: 0; font-size: 20px; }
 .weightDialogHeader .sectionEyebrow { margin: 0 0 4px; }
 .weightDialogHeader p:last-child { margin: 6px 0 0; color: #5a6c61; font-size: 14px; line-height: 1.55; }
 .weightDialog .weightControls { justify-content: start; }
-.weightDialog .weightControls label > div { display: flex; align-items: end; }
-.weightDialog .weightControls span { margin-bottom: 11px; }
+.weightDialog .weightControls label > div { position: relative; display: flex; align-items: center; }
+.weightDialog .weightControls input { width: 112px; padding-right: 30px; }
+.weightDialog .weightControls span { position: absolute; top: 50%; right: 10px; margin: 0; transform: translateY(-50%); pointer-events: none; }
 .weightDialog .inputHint, .weightDialog .formError { margin: -8px 0 0; }
 .weightDialogActions { display: flex; justify-content: end; gap: 10px; }
 .dialogClose { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid #aebeb3; border-radius: 50%; background: #fff; color: #355243; font-size: 24px; line-height: 1; cursor: pointer; }
@@ -201,7 +196,9 @@ h3 { margin: 0; font-size: 20px; }
 .saveStatus p { margin: 2px 0 0; color: #68766d; }
 .editorInstruction { margin: 0 0 14px; color: #53655a; font-size: 14px; line-height: 1.65; }
 .desktopGradeEditor { overflow-x: auto; border: 1px solid #c8d3cb; border-radius: 10px; background: #fff; }
-.gradeTable { width: 100%; min-width: 840px; border-collapse: collapse; text-align: left; }
+.gradeTable { width: 100%; min-width: 840px; table-layout: fixed; border-collapse: collapse; text-align: left; }
+.gradeTable thead th:first-child { width: 24%; }
+.gradeTable .inputHint { overflow-wrap: anywhere; }
 .gradeTable caption { padding: 14px 18px; border-bottom: 1px solid #cbd6ce; color: #45584c; font-size: 14px; font-weight: 800; text-align: left; }
 .gradeTable th, .gradeTable td { padding: 12px 14px; border-bottom: 1px solid #d8e0da; vertical-align: middle; }
 .gradeTable thead th { background: #edf3ee; color: #385246; font-size: 13px; }
@@ -210,7 +207,7 @@ h3 { margin: 0; font-size: 20px; }
 .gradeTable tbody th strong, .gradeTable tbody th span { display: block; }
 .gradeTable tbody th span { margin-top: 3px; color: #65756b; font-size: 12px; font-weight: 500; }
 .gradeTable tbody th em, .gradeCard em { display: inline-block; margin-top: 7px; padding: 2px 6px; border: 1px solid #9fa9a2; border-radius: 4px; color: #657068; font-size: 11px; font-style: normal; font-weight: 700; }
-.gradeTable td { min-width: 112px; }
+.gradeTable td { min-width: 112px; vertical-align: top; }
 .gradeTable input { max-width: 84px; padding: 7px 9px; text-align: right; }
 .gradeTable input:disabled { border-color: #c5cbc6; background: #ecefed; color: #8a948d; cursor: not-allowed; }
 .leaveRow { background: #f0f2f0; color: #7a857d; }
@@ -289,7 +286,22 @@ h3 { margin: 0; font-size: 20px; }
 .currentPill { background: #dff0e5; color: #176443; }.mutedPill { background: #edf0ee; color: #66766d; }
 .tableToolbar { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 14px; }.tableToolbar h2 { margin: 0; }.tableToolbar label { display: grid; gap: 5px; color: #40584b; font-size: 12px; font-weight: 800; }.tableToolbar input { min-height: 38px; }
 .masterTableWrap { overflow-x: auto; border: 1px solid #d1dbd3; border-radius: 8px; }.masterTable { width: 100%; min-width: 720px; border-collapse: collapse; text-align: left; }.masterTable th, .masterTable td { padding: 11px 13px; border-bottom: 1px solid #dce3de; }.masterTable th { background: #edf3ee; color: #385246; font-size: 13px; }.masterTable td { font-size: 14px; }.masterTable td strong, .masterTable td small { display: block; }.masterTable td small { margin-top: 3px; color: #64746a; }.grayRow { background: #f0f2f0; color: #718076; }.grayRow > * { opacity: .82; }
-.inlineDialog { display: grid; gap: 12px; max-width: 540px; margin: 18px 0 0; padding: 18px; border: 2px solid #4b8b67; border-radius: 9px; background: #f6fbf7; }.inlineDialog h3 { margin: 0; font-size: 17px; }.inlineDialog label { display: grid; gap: 5px; color: #40584b; font-size: 13px; font-weight: 800; }.inlineDialog select, .inlineDialog textarea { min-height: 42px; padding: 8px 10px; border: 1px solid #aebeb3; border-radius: 6px; background: #fff; }.inlineDialog textarea { min-height: 82px; resize: vertical; }.inlineDialog > div { display: flex; gap: 10px; }.inlineDialog button { width: auto; }
+.appDialog { width: min(100% - 32px, 620px); max-height: min(760px, calc(100dvh - 32px)); margin: auto; padding: 0; overflow: hidden; border: 0; border-radius: 12px; box-shadow: 0 18px 48px rgb(25 47 34 / .28); color: #243d2e; }
+.appDialog::backdrop { background: rgb(20 37 28 / .48); }
+.appDialogContent { display: grid; gap: 18px; max-height: inherit; overflow-y: auto; padding: 24px; overscroll-behavior: contain; }
+.appDialogHeader { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.appDialogHeader h2 { margin: 0; font-size: 21px; line-height: 1.35; }
+.appDialog label { display: grid; gap: 5px; color: #40584b; font-size: 13px; font-weight: 800; }
+.appDialog input:not([type="checkbox"]):not([type="radio"]), .appDialog select, .appDialog textarea { min-height: 42px; padding: 8px 10px; border: 1px solid #aebeb3; border-radius: 6px; background: #fff; color: #1f2d27; }
+.appDialog textarea { min-height: 100px; resize: vertical; }
+.appDialogActions { display: flex; flex-wrap: wrap; justify-content: end; gap: 10px; }
+.appDialog .formError, .appDialog .formSuccess { margin: 0; }
+.errorToast { border-color: #b93b35; border-left-color: #9f2b27; background: #fff3f2; color: #882f2b; }
+.errorToast button { border-color: #c67a75; color: #882f2b; }
+.errorToast button:hover { background: #ffe4e1; }
+.infoToast { border-color: #3e6e9d; border-left-color: #295e91; background: #eef6fd; color: #254f79; }
+.infoToast button { border-color: #7296b7; color: #254f79; }
+.infoToast button:hover { background: #e1f0fc; }
 .auditFilterCard .compactAction { width: auto; margin: 0; padding-inline: 18px; }.auditList { display: grid; gap: 10px; }.auditItem { display: flex; align-items: start; justify-content: space-between; gap: 20px; padding: 15px; border: 1px solid #d5ded7; border-radius: 8px; background: #fbfcfb; }.auditItem strong { color: #294d3a; }.auditItem p { margin: 5px 0 0; color: #586b5f; font-size: 14px; line-height: 1.55; }.auditItem dl { display: grid; grid-template-columns: repeat(3, minmax(100px, 1fr)); gap: 10px; margin: 0; }.auditItem dt { color: #6a786f; font-size: 11px; font-weight: 800; }.auditItem dd { margin: 3px 0 0; color: #3d5145; font-size: 13px; }.auditPagination { display: flex; align-items: center; justify-content: end; gap: 8px; margin-top: 14px; color: #5f7065; font-size: 13px; font-weight: 700; }.auditPagination .compactAction { width: auto; min-height: 38px; margin: 0; padding-inline: 14px; }
 
 @media (max-width: 840px) { .appBody { display: block; } .sideNav { display: none; } .teacherMain { padding: 28px 20px 44px; } .menuButton { display: inline-grid; margin-left: 0; border-radius: 10px; } .headerLogoutArea { display: none; } .appHeader { min-height: 64px; position: sticky; z-index: 30; padding-block: 8px; } .appRoleContext { display: none; } .mobileNavOverlay { position: fixed; z-index: 40; inset: 0; display: block; width: 100%; min-height: 100%; border: 0; background: rgb(20 37 28 / .42); cursor: pointer; } .mobileNav { display: block; position: fixed; z-index: 50; top: 64px; right: 0; bottom: 0; width: min(348px, calc(100vw - 32px)); overflow-y: auto; padding: 18px 16px 28px; border-left: 1px solid #cbd5cd; background: #fff; box-shadow: -10px 0 30px rgb(26 50 36 / .18); } .mobileNavHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding: 0 4px 14px; border-bottom: 1px solid #dce4de; } .mobileNavHeader p { margin: 0; color: #385246; font-size: 15px; font-weight: 800; } .mobileNavClose { display: inline-grid; width: 44px; height: 44px; place-items: center; border: 1px solid #b7c6ba; border-radius: 10px; background: #fff; color: #244c37; cursor: pointer; } .mobileNav .navGroup + .navGroup { margin-top: 18px; padding-top: 18px; } .mobileNav .navLink { min-height: 48px; font-size: 15px; } .mobileNav .supportBox { margin-top: 24px; } .subjectCardFooter { align-items: center; } .subjectLink { justify-self: start; } .sectionTitle { display: block; } .sectionTitle > p { margin-top: 10px; } .dashboardHeader { display: grid; gap: 18px; margin-bottom: 28px; } .headerAction { justify-self: start; margin: 0; } .yearToolbar { align-items: stretch; padding: 20px; } .yearSelector { width: 100%; } .termGuide { grid-template-columns: 1fr; gap: 16px; padding: 18px 0; } }

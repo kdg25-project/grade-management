@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 
 import { currentToast, toastDurationMs, type ToastKind, type ToastMessage } from "@/lib/toast-model";
@@ -14,6 +15,7 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 export function ToastProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const location = useLocation();
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [, setDialogRevision] = useState(0);
   const nextId = useRef(0);
   const previousLocationKey = useRef(location.key);
 
@@ -37,11 +39,27 @@ export function ToastProvider({ children }: Readonly<{ children: React.ReactNode
     if (previousLocationKey.current !== location.key) dismiss();
     previousLocationKey.current = location.key;
   }, [dismiss, location.key]);
+  useEffect(() => {
+    const refreshDialogHost = (event: Event) => {
+      if (event.target instanceof HTMLDialogElement) setDialogRevision((value) => value + 1);
+    };
+    document.addEventListener("close", refreshDialogHost, true);
+    document.addEventListener("toggle", refreshDialogHost, true);
+    return () => {
+      document.removeEventListener("close", refreshDialogHost, true);
+      document.removeEventListener("toggle", refreshDialogHost, true);
+    };
+  }, []);
+
   const toastContent = toast ? <div className="toastViewport" aria-atomic="true" aria-live={toast.kind === "error" ? "assertive" : "polite"}><div className={`${toast.kind}Toast`} role={toast.kind === "error" ? "alert" : "status"}><span>{toast.message}</span><button aria-label="通知を閉じる" type="button" onClick={() => dismiss(toast.id)}>閉じる</button></div></div> : null;
+  // Native dialogs occupy the browser top layer. Host every toast in the open
+  // dialog so success, info, and error notifications remain visible there.
+  // The dialog lifecycle listener re-homes a toast after its host closes.
+  const openDialogContent = typeof document === "undefined" ? null : document.querySelector<HTMLElement>("dialog[open] .appDialogContent");
 
   return <ToastContext.Provider value={{ showError, showInfo, showSuccess }}>
     {children}
-    {toastContent}
+    {toastContent ? openDialogContent ? createPortal(toastContent, openDialogContent) : toastContent : null}
   </ToastContext.Provider>;
 }
 

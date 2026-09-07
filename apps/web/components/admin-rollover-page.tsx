@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CsvUploadCard } from "@/components/csv-upload-card";
+import { ModalDialog } from "@/components/modal-dialog";
 import { TeacherShell } from "@/components/teacher-shell";
 import { useToast } from "@/components/toast-provider";
 import { applyRollover, previewRollover, type RolloverPreviewResponse } from "@/lib/admin-api";
@@ -25,8 +26,8 @@ const rolloverStepDescriptions = [
 ] as const;
 
 export function AdminRolloverPage() {
-  const { showSuccess } = useToast();
-  const [mobile, setMobile] = useState(true); const [step, setStep] = useState(1); const [draft, setDraft] = useState<Draft>(newDraft); const [fileNames, setFileNames] = useState<Record<FileSlot, string | null>>(emptyFileNames); const [confirmed, setConfirmedState] = useState<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const [error, setError] = useState<string | null>(null); const [saving, setSaving] = useState(false); const [fileLoading, setFileLoading] = useState<Record<FileSlot, boolean>>({ "2": false, "3": false, "4": false, "5": false, "6": false });
+  const { showError, showSuccess } = useToast();
+  const [mobile, setMobile] = useState(true); const [step, setStep] = useState(1); const [draft, setDraft] = useState<Draft>(newDraft); const [fileNames, setFileNames] = useState<Record<FileSlot, string | null>>(emptyFileNames); const [confirmed, setConfirmedState] = useState<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const [applyConfirmationOpen, setApplyConfirmationOpen] = useState(false); const [error, setError] = useState<string | null>(null); const [saving, setSaving] = useState(false); const [fileLoading, setFileLoading] = useState<Record<FileSlot, boolean>>({ "2": false, "3": false, "4": false, "5": false, "6": false });
   const draftRef = useRef(draft); const confirmedRef = useRef<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const savingRef = useRef(false); const fileLoadingRef = useRef(fileLoading); const fileReadGeneration = useRef<Record<FileSlot, number>>({ "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 }); const previewGeneration = useRef(0); const controller = useRef<AbortController | null>(null); const stepHeadingRef = useRef<HTMLHeadingElement | null>(null); const previousStepRef = useRef(step);
   const loadingFiles = Object.values(fileLoading).some(Boolean); const busy = saving || loadingFiles;
   const setConfirmed = (value: ConfirmedRollover<RolloverPreviewResponse> | null) => { confirmedRef.current = value; setConfirmedState(value); };
@@ -80,15 +81,23 @@ export function AdminRolloverPage() {
       if (isCurrentGeneration(generation, previewGeneration.current)) { savingRef.current = false; setSaving(false); }
     }
   }
+  function requestApply() {
+    if (mobile || savingRef.current || Object.values(fileLoadingRef.current).some(Boolean)) return;
+    const current = confirmedRef.current; const latest = createRolloverSnapshot(draftRef.current.year, draftRef.current.files, draftRef.current.skippedSubjects);
+    if (!current || !isConfirmedSnapshotCurrent(current, latest)) { setError("入力内容が変わりました。全体を確認し直してください。"); return; }
+    if (current.preview.errors.length) return;
+    setApplyConfirmationOpen(true);
+  }
+  const closeApplyConfirmation = () => { if (!saving) setApplyConfirmationOpen(false); };
   async function apply() {
     if (mobile || savingRef.current || Object.values(fileLoadingRef.current).some(Boolean)) return;
     const current = confirmedRef.current; const latest = createRolloverSnapshot(draftRef.current.year, draftRef.current.files, draftRef.current.skippedSubjects);
     if (!current || !isConfirmedSnapshotCurrent(current, latest)) { setError("入力内容が変わりました。全体を確認し直してください。"); return; }
-    if (current.preview.errors.length || !window.confirm("年度更新を一括反映します。続けますか？")) return;
+    if (current.preview.errors.length) return;
     const idempotencyKey = current.idempotencyKey ?? createIdempotencyKey(); const request = { ...current.snapshot, idempotencyKey }; const retryable = { ...current, idempotencyKey }; setConfirmed(retryable); savingRef.current = true; setSaving(true); setError(null);
     try {
-      await applyRollover(request); const reset = newDraft(); draftRef.current = reset; setDraft(reset); setFileNames(emptyFileNames()); setConfirmed(null); setStep(1); showSuccess("年度更新を反映しました。");
-    } catch (cause) { setError(cause instanceof GradeApiError ? cause.message : "反映に失敗しました。入力内容は保持されています。");
+      await applyRollover(request); const reset = newDraft(); draftRef.current = reset; setDraft(reset); setFileNames(emptyFileNames()); setConfirmed(null); setStep(1); setApplyConfirmationOpen(false); showSuccess("年度更新を反映しました。");
+    } catch (cause) { showError(cause instanceof GradeApiError ? cause.message : "反映に失敗しました。入力内容は保持されています。");
     } finally { savingRef.current = false; setSaving(false); }
   }
 
@@ -115,8 +124,12 @@ export function AdminRolloverPage() {
         {step > 1 ? <button className="secondaryAction compactAction" type="button" disabled={mobile || busy} onClick={() => { if (!busy) setStep((value) => value - 1); }}>戻る</button> : null}
         {step < 6 ? <button className="primaryAction compactAction" type="button" disabled={mobile || busy || !canProceedRollover(step, draft.year, draft.files, draft.skippedSubjects)} onClick={() => { if (!busy) setStep((value) => value + 1); }}>次へ</button> : null}
         {step === 6 ? <button className="primaryAction compactAction" type="button" disabled={mobile || busy || !canProceedRollover(step, draft.year, draft.files, draft.skippedSubjects)} onClick={() => void validate()}>全体を確認する</button> : null}
-        {step === 7 ? <button className="primaryAction compactAction" type="button" disabled={mobile || busy || !preview || Boolean(preview.errors.length) || !isConfirmedSnapshotCurrent(confirmed, createRolloverSnapshot(draft.year, draft.files, draft.skippedSubjects))} onClick={() => void apply()}>{saving ? "反映中…" : "一括反映する"}</button> : null}
+        {step === 7 ? <button className="primaryAction compactAction" type="button" disabled={mobile || busy || !preview || Boolean(preview.errors.length) || !isConfirmedSnapshotCurrent(confirmed, createRolloverSnapshot(draft.year, draft.files, draft.skippedSubjects))} onClick={requestApply}>{saving ? "反映中…" : "一括反映する"}</button> : null}
       </div>
     </section>
+    <ModalDialog dismissible={!saving} onRequestClose={closeApplyConfirmation} open={applyConfirmationOpen} title="年度更新を一括反映する">
+      <p>確認したCSVの内容を新年度へ一度だけ反映します。反映を開始しますか？</p>
+      <div className="appDialogActions"><button className="secondaryAction compactAction" disabled={saving} type="button" onClick={closeApplyConfirmation}>キャンセル</button><button className="primaryAction compactAction" disabled={saving} type="button" onClick={() => void apply()}>{saving ? "反映中…" : "反映する"}</button></div>
+    </ModalDialog>
   </TeacherShell>;
 }
