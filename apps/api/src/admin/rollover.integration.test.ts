@@ -43,7 +43,7 @@ describe("annual rollover", () => {
     expect(parseCsv("x", "専攻,科目名,担当講師\n共通,\"基礎\"不正,山田\n", ["専攻", "科目名", "担当講師"], [])).toEqual([]);
   });
   it("previews without mutation and reports invalid values", async () => {
-    const { database, service } = setup(); const preview = await service.preview(input()); expect(preview.errors).toEqual([]); expect(preview.graduationCandidates).toBe(1); expect(database.query("SELECT count(*) AS count FROM subjects").get()).toEqual({ count: 0 });
+    const { database, service } = setup(); const preview = await service.preview(input()); expect(preview.errors).toEqual([]); expect(preview.graduationCandidates).toBe(1); expect(preview.subjectCounts).toEqual({ 1: 1, 2: 0, 3: 0 }); expect(database.query("SELECT count(*) AS count FROM subjects").get()).toEqual({ count: 0 });
     database.exec("INSERT INTO students VALUES ('failed','F-1','留年','りゅうねん','2005-04-01','男',NULL,NULL,NULL,NULL,'system-engineer',2023,'enrolled',NULL,0,NULL,1,0,0),('suspended','S-1','休学','きゅうがく','2005-04-01','男',NULL,NULL,NULL,NULL,'system-engineer',2023,'suspended',NULL,0,NULL,0,0,0)");
     expect((await service.preview(input())).graduationCandidates).toBe(1);
     const invalid = await service.preview({ ...input(), newStudentsCsv: csv.students.replace(",女,", ",その他,") }); expect(invalid.errors).not.toHaveLength(0);

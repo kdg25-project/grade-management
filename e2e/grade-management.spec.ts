@@ -43,7 +43,8 @@ const rolloverTeacherCsv = [
   `${rollover.teacher.name},イーツーイーネンドコウシンコウシ,35,男,${rollover.teacher.email}`,
 ].join("\r\n");
 
-const rolloverSubjectCsv = (subject: (typeof rollover.subjects)[number]) => [
+type RolloverSubject = { grade: 1 | 2 | 3; name: string; course: "システムエンジニア" | "Webデザイナー" | "共通" };
+const rolloverSubjectCsv = (subject: RolloverSubject) => [
   "専攻,科目名,担当講師",
   `${subject.course},${subject.name},${rollover.teacher.name}`,
 ].join("\r\n");
@@ -51,6 +52,18 @@ const rolloverSubjectCsv = (subject: (typeof rollover.subjects)[number]) => [
 const rolloverStudentCsv = [
   "学籍番号,氏名,ひらがな,年齢,生年月日,性別,メール,電話,郵便番号,住所,専攻",
   `${rollover.student.studentNumber},${rollover.student.name},イーツーイーネンドコウシンシンニュウセイ,18,2010-04-01,女,e2e-rollover-student@example.test,090-9876-5432,150-0001,東京都渋谷区E2E 8-2-8,Webデザイナー`,
+].join("\r\n");
+
+const skippedRollover = {
+  targetYear: 2029,
+  student: { studentNumber: "E2E-ROLLOVER-2029-001", name: "E2E スキップ年度更新新入生" },
+  skippedSubject: { grade: 1, name: "E2E年度更新スキップ除外", course: "システムエンジニア" },
+  retainedSubject: { grade: 3, name: "E2E年度更新スキップ後登録", course: "共通" },
+} as const;
+
+const skippedRolloverStudentCsv = [
+  "学籍番号,氏名,ひらがな,年齢,生年月日,性別,メール,電話,郵便番号,住所,専攻",
+  `${skippedRollover.student.studentNumber},${skippedRollover.student.name},イーツーイースキップネンドコウシンシンニュウセイ,18,2011-04-01,女,e2e-rollover-skip-student@example.test,090-8765-4321,150-0001,東京都渋谷区E2E 9-2-9,Webデザイナー`,
 ].join("\r\n");
 
 async function readCredentials() {
@@ -197,6 +210,16 @@ test.describe("grade-management local smoke", () => {
     await expect(rolloverCard).toContainText("teachers.csv");
     await expect(rolloverCard).not.toContainText("invalid-teachers.csv");
 
+    await rolloverInput.setInputFiles({ name: "rollover-teachers.csv", mimeType: "text/csv", buffer: Buffer.from(rolloverTeacherCsv, "utf8") });
+    await page.getByRole("button", { name: "次へ", exact: true }).click();
+    const gradeOneInput = page.getByLabel("1年科目CSV");
+    await page.getByRole("button", { name: "スキップ", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "2年科目CSV", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "戻る", exact: true }).click();
+    await expect(page.getByText("1年の科目登録をスキップしています。", { exact: true })).toBeVisible();
+    await gradeOneInput.setInputFiles({ name: "rollover-grade-1.csv", mimeType: "text/csv", buffer: Buffer.from(rolloverSubjectCsv(rollover.subjects[0]), "utf8") });
+    await expect(page.getByText("1年の科目登録をスキップしています。", { exact: true })).toHaveCount(0);
+
     await page.goto("/admin/imports");
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(input).toBeDisabled();
@@ -247,12 +270,14 @@ test.describe("grade-management local smoke", () => {
 
     await page.goto("/admin/imports");
     await expect(page.getByRole("heading", { name: "通常CSV取込" })).toBeVisible();
-    await page.getByLabel("CSVファイル").setInputFiles({
+    const importCsvInput = page.getByLabel("CSVファイル");
+    await expect(importCsvInput).toBeEnabled();
+    await importCsvInput.setInputFiles({
       name: "students.csv",
       mimeType: "text/csv",
       buffer: Buffer.from(studentImportCsv, "utf8"),
     });
-    await expect(page.getByText("CSVを読み込みました。", { exact: true })).toBeVisible();
+    await expect(page.locator(".csvUploadStatus")).toContainText("students.csv");
     const importStarted = performance.now();
     const importPreviewResponse = page.waitForResponse((response) => response.url().includes("/api/admin/imports/preview") && response.request().method() === "POST");
     await page.getByRole("button", { name: "内容を確認する" }).click();
@@ -404,17 +429,18 @@ test.describe("grade-management local smoke", () => {
     await page.getByRole("button", { name: "次へ", exact: true }).click();
 
     await page.getByLabel(/講師CSV/u).setInputFiles({ name: "rollover-teachers.csv", mimeType: "text/csv", buffer: Buffer.from(rolloverTeacherCsv, "utf8") });
-    await expect(page.getByText("CSVを読み込みました。", { exact: true })).toBeVisible();
+    await expect(page.locator(".csvUploadStatus")).toContainText("rollover-teachers.csv");
     await page.getByRole("button", { name: "次へ", exact: true }).click();
 
     for (const [index, subject] of rollover.subjects.entries()) {
-      await page.getByLabel(new RegExp(`${index + 1}年科目CSV`, "u")).setInputFiles({ name: `rollover-grade-${index + 1}.csv`, mimeType: "text/csv", buffer: Buffer.from(rolloverSubjectCsv(subject), "utf8") });
-      await expect(page.getByText("CSVを読み込みました。", { exact: true })).toBeVisible();
+      const fileName = `rollover-grade-${index + 1}.csv`;
+      await page.getByLabel(new RegExp(`${index + 1}年科目CSV`, "u")).setInputFiles({ name: fileName, mimeType: "text/csv", buffer: Buffer.from(rolloverSubjectCsv(subject), "utf8") });
+      await expect(page.locator(".csvUploadStatus")).toContainText(fileName);
       await page.getByRole("button", { name: "次へ", exact: true }).click();
     }
 
     await page.getByLabel(/新入生CSV/u).setInputFiles({ name: "rollover-students.csv", mimeType: "text/csv", buffer: Buffer.from(rolloverStudentCsv, "utf8") });
-    await expect(page.getByText("CSVを読み込みました。", { exact: true })).toBeVisible();
+    await expect(page.locator(".csvUploadStatus")).toContainText("rollover-students.csv");
     const rolloverStarted = performance.now();
     const previewResponse = page.waitForResponse((response) => response.url().includes("/api/admin/rollover/preview") && response.request().method() === "POST");
     await page.getByRole("button", { name: "全体を確認する", exact: true }).click();
@@ -485,5 +511,49 @@ test.describe("grade-management local smoke", () => {
     expect(persistedSubjects).toEqual(expect.arrayContaining(rollover.subjects.map((subject) => expect.objectContaining({ name: subject.name, gradeLevel: subject.grade, teacherName: rollover.teacher.name }))));
     expect(persistedSubjects).toHaveLength(rollover.subjects.length);
     expect(performance.now() - rolloverStarted).toBeLessThan(60_000);
+  });
+
+  test("applies a rollover with skipped subject grades and excludes a replaced upload", async ({ page }) => {
+    const credentials = await readCredentials();
+    await ensureAdminSession(page, credentials);
+
+    const subjectsBefore = await getAuthenticatedJson(page, `/api/admin/master/subjects?year=${skippedRollover.targetYear}`);
+    expect(subjectsBefore.status).toBe(200);
+    expect(subjectsBefore.body).toMatchObject({ currentAcademicYear: skippedRollover.targetYear - 1, items: [] });
+
+    await page.goto("/admin/rollover");
+    await page.getByLabel("新年度").fill(String(skippedRollover.targetYear));
+    await page.getByRole("button", { name: "次へ", exact: true }).click();
+    await page.getByLabel("講師CSV").setInputFiles({ name: "skip-rollover-teachers.csv", mimeType: "text/csv", buffer: Buffer.from(rolloverTeacherCsv, "utf8") });
+    await page.getByRole("button", { name: "次へ", exact: true }).click();
+
+    await page.getByLabel("1年科目CSV").setInputFiles({ name: "will-be-skipped.csv", mimeType: "text/csv", buffer: Buffer.from(rolloverSubjectCsv(skippedRollover.skippedSubject), "utf8") });
+    await expect(page.locator(".csvUploadStatus")).toContainText("will-be-skipped.csv");
+    await page.getByRole("button", { name: "スキップ", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "2年科目CSV", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "スキップ", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "3年科目CSV", exact: true })).toBeVisible();
+    await page.getByLabel("3年科目CSV").setInputFiles({ name: "retained-grade-three.csv", mimeType: "text/csv", buffer: Buffer.from(rolloverSubjectCsv(skippedRollover.retainedSubject), "utf8") });
+    await page.getByRole("button", { name: "次へ", exact: true }).click();
+    await page.getByLabel("新入生CSV").setInputFiles({ name: "skip-rollover-students.csv", mimeType: "text/csv", buffer: Buffer.from(skippedRolloverStudentCsv, "utf8") });
+
+    const previewResponse = page.waitForResponse((response) => response.url().includes("/api/admin/rollover/preview") && response.request().method() === "POST");
+    await page.getByRole("button", { name: "全体を確認する", exact: true }).click();
+    const previewRequest = await previewResponse;
+    expect(previewRequest.ok()).toBeTruthy();
+    expect(previewRequest.request().postDataJSON()).toMatchObject({ targetYear: skippedRollover.targetYear, grade1SubjectsCsv: "専攻,科目名,担当講師\r\n", grade2SubjectsCsv: "専攻,科目名,担当講師\r\n" });
+    await expect(page.getByText("科目: 1年 0件、2年 0件、3年 1件", { exact: true })).toBeVisible();
+    await expect(page.getByText("スキップ: 1年、2年の科目は登録しません。", { exact: true })).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    const applyResponse = page.waitForResponse((response) => response.url().includes("/api/admin/rollover/apply") && response.request().method() === "POST");
+    await page.getByRole("button", { name: "一括反映する", exact: true }).click();
+    expect((await applyResponse).ok()).toBeTruthy();
+
+    const subjectsAfter = await getAuthenticatedJson(page, `/api/admin/master/subjects?year=${skippedRollover.targetYear}`);
+    expect(subjectsAfter.status).toBe(200);
+    const subjects = (subjectsAfter.body as { items: Array<{ name: string; gradeLevel: number }> }).items;
+    expect(subjects).toEqual(expect.arrayContaining([expect.objectContaining({ name: skippedRollover.retainedSubject.name, gradeLevel: skippedRollover.retainedSubject.grade })]));
+    expect(subjects).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: skippedRollover.skippedSubject.name })]));
   });
 });
