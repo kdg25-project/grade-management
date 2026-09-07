@@ -36,10 +36,16 @@ h3 { margin: 0; font-size: 20px; }
 .formError { margin: -4px 0 0; padding: 11px 12px; border-left: 4px solid #b93b35; background: #fff3f2; color: #882f2b; font-size: 14px; line-height: 1.5; }
 .formSuccess { margin: -4px 0 0; padding: 11px 12px; border-left: 4px solid #176443; background: #edf8f0; color: #245c3d; font-size: 14px; line-height: 1.5; }
 .toastViewport { position: fixed; z-index: 100; top: 18px; left: 50%; width: min(440px, calc(100vw - 32px)); transform: translateX(-50%); pointer-events: none; }
-.successToast { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 14px 13px 16px; border: 1px solid #2a754f; border-left: 4px solid #176443; border-radius: 9px; background: #edf8f0; box-shadow: 0 8px 24px rgb(30 63 43 / .18); color: #245c3d; font-size: 14px; font-weight: 700; line-height: 1.5; pointer-events: auto; }
-.successToast button { min-height: 34px; flex: 0 0 auto; padding: 5px 9px; border: 1px solid #57906f; border-radius: 6px; background: #fff; color: #245c3d; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
-.successToast button:hover { background: #dff0e5; }
-@media (prefers-reduced-motion: no-preference) { .successToast { animation: successToastEnter .16s ease-out; } }
+.successToast, .errorToast, .infoToast { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 14px 13px 16px; border: 1px solid #2a754f; border-left: 4px solid #176443; border-radius: 9px; background: #edf8f0; box-shadow: 0 8px 24px rgb(30 63 43 / .18); color: #245c3d; font-size: 14px; font-weight: 700; line-height: 1.5; pointer-events: auto; }
+.successToast button, .errorToast button, .infoToast button { min-height: 34px; flex: 0 0 auto; padding: 5px 9px; border: 1px solid #57906f; border-radius: 6px; background: #fff; color: #245c3d; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.successToast button:hover, .errorToast button:hover, .infoToast button:hover { background: #dff0e5; }
+@media (prefers-reduced-motion: no-preference) { .successToast, .errorToast, .infoToast { animation: successToastEnter .16s ease-out; } }
+.errorToast { border-color: #b93b35; border-left-color: #9f2b27; background: #fff3f2; color: #882f2b; }
+.errorToast button { border-color: #c67a75; color: #882f2b; }
+.errorToast button:hover { background: #ffe4e1; }
+.infoToast { border-color: #3e6e9d; border-left-color: #295e91; background: #eef6fd; color: #254f79; }
+.infoToast button { border-color: #7296b7; color: #254f79; }
+.infoToast button:hover { background: #e1f0fc; }
 @keyframes successToastEnter { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 .resetLink { margin: 20px 0 0; text-align: center; font-size: 14px; font-weight: 700; }
 .resetLink a { color: #176443; }

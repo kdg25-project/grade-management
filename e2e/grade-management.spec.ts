@@ -419,7 +419,7 @@ test.describe("grade-management local smoke", () => {
     await expect(page.getByRole("combobox", { name: "学期", exact: true })).toHaveValue("1");
     const exportPreviewResponse = page.waitForResponse((response) => response.url().includes("/api/admin/grade-export/preview") && response.request().method() === "POST");
     await page.getByRole("button", { name: "件数を確認する" }).click();
-    await expect(page.getByText("2027年度：1件の確定済み成績をCSVで出力します。", { exact: true })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "1件の確定済み成績をCSVで出力できます。" })).toBeVisible();
     const exportPreview = await (await exportPreviewResponse).json() as { token: string };
     expect(exportPreview.token).toBeTruthy();
     const downloadResponse = page.waitForResponse((response) => response.url().includes("/api/admin/grade-export/download") && response.request().method() === "GET");
