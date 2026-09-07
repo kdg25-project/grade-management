@@ -267,8 +267,11 @@ test.describe("grade-management local smoke", () => {
     await expect(page.getByRole("heading", { name: "成績表" })).toBeVisible();
     expect(performance.now() - subjectsLoaded).toBeLessThan(3_000);
 
+    const weightRefreshResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "GET");
     await page.getByRole("button", { name: "初期比重を保存" }).click();
     await expect(page.getByRole("status").filter({ hasText: "評価比重を保存しました。成績を再計算しました。" })).toBeVisible();
+    expect((await weightRefreshResponse).status()).toBe(200);
+    await expect(page.getByRole("button", { name: "比重を保存" })).toBeVisible();
     await page.getByLabel("開発用 学生の出席率").fill("95");
     await page.getByLabel("開発用 学生の授業態度").fill("9");
     await page.getByLabel("開発用 学生の課題").fill("8");
@@ -279,7 +282,7 @@ test.describe("grade-management local smoke", () => {
     expect((await gradeSaveResponse).ok()).toBeTruthy();
     const refreshedGrades = await gradeRefreshResponse;
     expect(refreshedGrades.status()).toBe(200);
-    await expect.poll(async () => (await refreshedGrades.json() as { students: Array<{ name: string; grade: { attendanceRate: number | null } | null }> }).students.find((student) => student.name === "開発用 学生")?.grade?.attendanceRate).toBe(95);
+    expect((await refreshedGrades.json() as { students: Array<{ name: string; grade: { attendanceRate: number | null } | null }> }).students.find((student) => student.name === "開発用 学生")?.grade?.attendanceRate).toBe(95);
     await expect(page.getByRole("status").filter({ hasText: "成績を保存しました。" })).toBeVisible();
     await page.reload();
     const persistedAttendance = page.getByLabel("開発用 学生の出席率");
@@ -312,6 +315,9 @@ test.describe("grade-management local smoke", () => {
     await page.getByRole("button", { name: "反映する" }).click();
     expect((await importApplyResponse).ok()).toBeTruthy();
     expect(performance.now() - importStarted).toBeLessThan(60_000);
+    await expect(page.getByRole("status").filter({ hasText: "反映しました。再送は行いません。" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "反映済み" })).toBeDisabled();
+    await expect(page.locator(".formSuccess").filter({ hasText: "反映しました。再送は行いません。" })).toHaveCount(0);
 
     await page.goto("/admin/students");
     await expect(page.getByRole("heading", { name: "学生を登録・確認する" })).toBeVisible();
