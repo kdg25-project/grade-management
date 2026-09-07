@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CsvUploadCard } from "@/components/csv-upload-card";
 import { TeacherShell } from "@/components/teacher-shell";
+import { useToast } from "@/components/toast-provider";
 import { applyRollover, previewRollover, type RolloverPreviewResponse } from "@/lib/admin-api";
 import { GradeApiError } from "@/lib/grade-api";
 import { shouldAllowNavigation } from "@/lib/navigation-guard";
@@ -24,6 +25,7 @@ const rolloverStepDescriptions = [
 ] as const;
 
 export function AdminRolloverPage() {
+  const { showSuccess } = useToast();
   const [mobile, setMobile] = useState(true); const [step, setStep] = useState(1); const [draft, setDraft] = useState<Draft>(newDraft); const [fileNames, setFileNames] = useState<Record<FileSlot, string | null>>(emptyFileNames); const [confirmed, setConfirmedState] = useState<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const [error, setError] = useState<string | null>(null); const [saving, setSaving] = useState(false); const [fileLoading, setFileLoading] = useState<Record<FileSlot, boolean>>({ "2": false, "3": false, "4": false, "5": false, "6": false });
   const draftRef = useRef(draft); const confirmedRef = useRef<ConfirmedRollover<RolloverPreviewResponse> | null>(null); const savingRef = useRef(false); const fileLoadingRef = useRef(fileLoading); const fileReadGeneration = useRef<Record<FileSlot, number>>({ "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 }); const previewGeneration = useRef(0); const controller = useRef<AbortController | null>(null); const stepHeadingRef = useRef<HTMLHeadingElement | null>(null); const previousStepRef = useRef(step);
   const loadingFiles = Object.values(fileLoading).some(Boolean); const busy = saving || loadingFiles;
@@ -85,7 +87,7 @@ export function AdminRolloverPage() {
     if (current.preview.errors.length || !window.confirm("年度更新を一括反映します。続けますか？")) return;
     const idempotencyKey = current.idempotencyKey ?? createIdempotencyKey(); const request = { ...current.snapshot, idempotencyKey }; const retryable = { ...current, idempotencyKey }; setConfirmed(retryable); savingRef.current = true; setSaving(true); setError(null);
     try {
-      await applyRollover(request); const reset = newDraft(); draftRef.current = reset; setDraft(reset); setFileNames(emptyFileNames()); setConfirmed(null); setStep(1); window.alert("年度更新を反映しました。");
+      await applyRollover(request); const reset = newDraft(); draftRef.current = reset; setDraft(reset); setFileNames(emptyFileNames()); setConfirmed(null); setStep(1); showSuccess("年度更新を反映しました。");
     } catch (cause) { setError(cause instanceof GradeApiError ? cause.message : "反映に失敗しました。入力内容は保持されています。");
     } finally { savingRef.current = false; setSaving(false); }
   }

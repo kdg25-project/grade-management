@@ -226,6 +226,29 @@ test.describe("grade-management local smoke", () => {
     await testInfo.attach("mobile-csv-upload-disabled", { body: await page.screenshot(), contentType: "image/png" });
   });
 
+  test("keeps a long teacher selection within the subject form on desktop and mobile", async ({ page }) => {
+    const credentials = await readCredentials();
+    await ensureAdminSession(page, credentials);
+
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/admin/subjects");
+      const teacherSelect = page.getByLabel("担当講師");
+      await expect(teacherSelect).toBeVisible();
+      await teacherSelect.evaluate((select) => {
+        const option = document.createElement("option");
+        option.value = "long-teacher-label";
+        option.textContent = "非常に長い講師名（very-long-teacher-address-for-overflow-regression@example.test）";
+        select.append(option);
+        select.value = option.value;
+      });
+      const [selectBox, cardBox] = await Promise.all([teacherSelect.boundingBox(), page.locator(".masterCard").first().boundingBox()]);
+      expect(selectBox).not.toBeNull();
+      expect(cardBox).not.toBeNull();
+      expect(selectBox!.x + selectBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
+    }
+  });
+
   test("protects routes and persists grades through finalization and reopen", async ({ page }) => {
     const credentials = await readCredentials();
     const protectedStart = performance.now();
@@ -245,7 +268,7 @@ test.describe("grade-management local smoke", () => {
     expect(performance.now() - subjectsLoaded).toBeLessThan(3_000);
 
     await page.getByRole("button", { name: "初期比重を保存" }).click();
-    await expect(page.getByText("評価比重を保存しました。成績を再計算しました。")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "評価比重を保存しました。成績を再計算しました。" })).toBeVisible();
     await page.getByLabel("開発用 学生の出席率").fill("95");
     await page.getByLabel("開発用 学生の授業態度").fill("9");
     await page.getByLabel("開発用 学生の課題").fill("8");
@@ -257,7 +280,7 @@ test.describe("grade-management local smoke", () => {
     const refreshedGrades = await gradeRefreshResponse;
     expect(refreshedGrades.status()).toBe(200);
     await expect.poll(async () => (await refreshedGrades.json() as { students: Array<{ name: string; grade: { attendanceRate: number | null } | null }> }).students.find((student) => student.name === "開発用 学生")?.grade?.attendanceRate).toBe(95);
-    await expect(page.getByText("成績を保存しました。")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "成績を保存しました。" })).toBeVisible();
     await page.reload();
     const persistedAttendance = page.getByLabel("開発用 学生の出席率");
     await expect(persistedAttendance).toHaveValue("95");
@@ -308,7 +331,7 @@ test.describe("grade-management local smoke", () => {
     await page.goto("/admin");
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "開発用データベースの前期を確定する" }).click();
-    await expect(page.getByText("開発用データベースの前期を確定しました。")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "開発用データベースの前期を確定しました。" })).toBeVisible();
 
     await page.goto("/admin/grades");
     await expect(page.getByRole("heading", { name: "成績と再試験履歴を確認する" })).toBeVisible();
@@ -367,17 +390,17 @@ test.describe("grade-management local smoke", () => {
     await expect(page).toHaveURL(/term=2/);
     await expect(page.getByText("2027年度 後期")).toBeVisible();
     await page.getByRole("button", { name: "初期比重を保存" }).click();
-    await expect(page.getByText("評価比重を保存しました。成績を再計算しました。")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "評価比重を保存しました。成績を再計算しました。" })).toBeVisible();
     await page.getByLabel("開発用 学生の出席率").fill("90");
     await page.getByLabel("開発用 学生の授業態度").fill("8");
     await page.getByLabel("開発用 学生の課題").fill("9");
     await page.getByRole("button", { name: "変更を保存" }).click();
-    await expect(page.getByText("成績を保存しました。")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "成績を保存しました。" })).toBeVisible();
 
     await ensureAdminSession(page, credentials);
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "開発用データベースの後期を確定する" }).click();
-    await expect(page.getByText("開発用データベースの後期を確定しました。")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "開発用データベースの後期を確定しました。" })).toBeVisible();
 
     await ensureTeacherSession(page, credentials);
     const finalizedSubject = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "開発用データベース" }) });
@@ -386,7 +409,7 @@ test.describe("grade-management local smoke", () => {
     await ensureAdminSession(page, credentials);
     page.once("dialog", (dialog) => dialog.accept("E2E: entry correction requested"));
     await page.getByRole("button", { name: "開発用データベースの後期を再開する" }).click();
-    await expect(page.getByText("開発用データベースの後期を再開しました。")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "開発用データベースの後期を再開しました。" })).toBeVisible();
 
     await page.goto("/admin/audit");
     await expect(page.getByRole("heading", { name: "監査履歴" })).toBeVisible();

@@ -35,6 +35,12 @@ h3 { margin: 0; font-size: 20px; }
 .passwordToggle svg, .menuButton svg { width: 20px; height: 20px; }
 .formError { margin: -4px 0 0; padding: 11px 12px; border-left: 4px solid #b93b35; background: #fff3f2; color: #882f2b; font-size: 14px; line-height: 1.5; }
 .formSuccess { margin: -4px 0 0; padding: 11px 12px; border-left: 4px solid #176443; background: #edf8f0; color: #245c3d; font-size: 14px; line-height: 1.5; }
+.toastViewport { position: fixed; z-index: 100; top: 18px; left: 50%; width: min(440px, calc(100vw - 32px)); transform: translateX(-50%); pointer-events: none; }
+.successToast { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 14px 13px 16px; border: 1px solid #2a754f; border-left: 4px solid #176443; border-radius: 9px; background: #edf8f0; box-shadow: 0 8px 24px rgb(30 63 43 / .18); color: #245c3d; font-size: 14px; font-weight: 700; line-height: 1.5; pointer-events: auto; }
+.successToast button { min-height: 34px; flex: 0 0 auto; padding: 5px 9px; border: 1px solid #57906f; border-radius: 6px; background: #fff; color: #245c3d; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.successToast button:hover { background: #dff0e5; }
+@media (prefers-reduced-motion: no-preference) { .successToast { animation: successToastEnter .16s ease-out; } }
+@keyframes successToastEnter { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 .resetLink { margin: 20px 0 0; text-align: center; font-size: 14px; font-weight: 700; }
 .resetLink a { color: #176443; }
 .primaryAction { min-height: 46px; width: 100%; margin-top: 4px; border: 1px solid #176443; border-radius: 10px; background: #176443; color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; text-decoration: none; transition: background-color .16s ease, border-color .16s ease, transform .16s ease; }
@@ -193,7 +199,8 @@ h3 { margin: 0; font-size: 20px; }
 .masterCard:has(> .masterForm) > h2, .masterCard:has(> label + .primaryAction) > h2 { margin-bottom: 8px; }
 .masterCard:has(> .masterForm) > h2 + p { margin: 0 0 20px; color: #52645a; font-size: 14px; line-height: 1.6; }
 .masterForm { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0 24px; }
-.masterForm > label { display: grid; gap: 5px; color: #40584b; font-size: 13px; font-weight: 800; }
+.masterForm > label { display: grid; min-width: 0; gap: 5px; color: #40584b; font-size: 13px; font-weight: 800; }
+.masterForm > label > input:not([type="checkbox"]), .masterForm > label > select { width: 100%; min-width: 0; }
 .csvUploadCard { min-height: 230px; display: grid; align-content: center; justify-items: center; gap: 7px; padding: 22px; border: 2px dashed #aebeb3; border-radius: 10px; background: #f7faf7; color: #385246; text-align: center; cursor: pointer; transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease; }
 .masterForm > .csvUploadCard { grid-column: 1 / -1; }
 .csvUploadCard:hover:not(.csvUploadCard-disabled), .csvUploadCard:focus-within { border-color: #176443; background: #eef7f0; box-shadow: 0 0 0 3px #c9e4d3; }
