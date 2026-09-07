@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpenCheck, CalendarCog, ClipboardPenLine, Download, History, LogOut, Menu as MenuIcon, RotateCcw, ShieldCheck, Upload, UserCog, UserRoundPlus, Users, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpenCheck, CalendarCog, Download, History, LogOut, Menu as MenuIcon, RotateCcw, ShieldCheck, Upload, UserCog, UserRoundPlus, Users, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
@@ -60,7 +60,6 @@ function GroupedNavigation({ onNavigate, navigationGuard, variant }: Readonly<{ 
           </div>
         </section>
       ))}
-      {variant === "teacher" ? <p className="navItemMuted"><ClipboardPenLine aria-hidden="true" />成績入力は担当科目から選択します。</p> : null}
       <div className="supportBox">
         <strong>お困りのときは</strong>
         <p>{variant === "admin" ? "学生・成績データについては、管理者へお問い合わせください。" : "ログインや担当科目については、教務担当へお問い合わせください。"}</p>
