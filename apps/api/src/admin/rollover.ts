@@ -23,6 +23,12 @@ const headers = {
   subjects: ["専攻", "科目名", "担当講師"],
   students: ["学籍番号", "氏名", "ひらがな", "年齢", "生年月日", "性別", "メール", "電話", "郵便番号", "住所", "専攻"],
 } as const;
+// Annual rollover originally used distinct labels from the ordinary CSV import.
+// Accept only that established import format as a complete, ordered alternative.
+const rolloverHeaderAliases = {
+  teachers: [["氏名", "氏名（ひらがな）", "年齢", "性別", "メールアドレス"]],
+  students: [["学籍番号", "氏名", "氏名（ひらがな）", "年齢", "生年月日", "性別", "メールアドレス", "電話番号", "郵便番号", "住所", "専攻"]],
+} as const;
 const text = (value: string) => value.trim();
 const todayYear = () => new Date().getUTCFullYear();
 const utf8Length = (value: string) => new TextEncoder().encode(value).byteLength;
@@ -31,7 +37,7 @@ const validBirthDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !
 const ageAtYear = (birthDate: string, year: number) => year - Number(birthDate.slice(0, 4));
 
 /** RFC4180 parser: CRLF/LF, quoted commas and escaped quotes. Input is decoded with fatal UTF-8 in the browser. */
-export const parseCsv = (file: string, source: string, expectedHeaders: readonly string[], errors: RowError[]) => {
+export const parseCsv = (file: string, source: string, expectedHeaders: readonly string[], errors: RowError[], headerAliases: readonly (readonly string[])[] = []) => {
   if (utf8Length(source) > MAX_CSV_BYTES) { errors.push({ file, row: 0, field: "ファイル", reason: "ファイルサイズは150KB以下にしてください。" }); return []; }
   if (source.includes("\uFFFD")) { errors.push({ file, row: 0, field: "ファイル", reason: "UTF-8として読み取れない文字が含まれています。" }); return []; }
   const input = source.startsWith("\uFEFF") ? source.slice(1) : source;
@@ -53,14 +59,15 @@ export const parseCsv = (file: string, source: string, expectedHeaders: readonly
   }
   if (quoted) { errors.push({ file, row: sourceRow, field: "CSV", reason: "引用符が閉じられていません。" }); return []; }
   if (field || row.length) { row.push(field); completeRow(); }
-  if (rows.length === 0 || rows[0]?.join("\u0000") !== expectedHeaders.join("\u0000")) { errors.push({ file, row: 1, field: "見出し", reason: `見出しは「${expectedHeaders.join("、")}」にしてください。` }); return []; }
+  const allowedHeaders = [expectedHeaders, ...headerAliases];
+  if (rows.length === 0 || !allowedHeaders.some((header) => rows[0]?.length === header.length && rows[0].every((column, index) => column === header[index]))) { errors.push({ file, row: 1, field: "見出し", reason: `見出しは「${expectedHeaders.join("、")}」にしてください。` }); return []; }
   const data = rows.slice(1).filter((columns) => columns.some((column) => text(column)));
   if (data.length > MAX_ROWS) { errors.push({ file, row: 0, field: "行数", reason: "1ファイルは1000行以下にしてください。" }); return []; }
   for (const columns of data) if (columns.length !== expectedHeaders.length) errors.push({ file, row: columns.sourceRow, field: "列数", reason: "列数が見出しと一致しません。" });
   return data;
 };
 
-const parseTeachers = (source: string, errors: RowError[]): TeacherRow[] => parseCsv("講師CSV", source, headers.teachers, errors).flatMap((row) => {
+const parseTeachers = (source: string, errors: RowError[]): TeacherRow[] => parseCsv("講師CSV", source, headers.teachers, errors, rolloverHeaderAliases.teachers).flatMap((row) => {
   if (row.length !== headers.teachers.length) return [];
   const [name, kana, ageRaw, gender, email] = row.map(text); const age = Number(ageRaw); const number = row.sourceRow;
   if (!name || !kana || !Number.isInteger(age) || age < 18 || age > 100 || (gender !== "男" && gender !== "女") || !validEmail(email)) { errors.push({ file: "講師CSV", row: number, field: "入力値", reason: "氏名・ひらがな・年齢・性別・メールアドレスを確認してください。" }); return []; }
@@ -71,7 +78,7 @@ const parseSubjects = (gradeLevel: 1 | 2 | 3, source: string, errors: RowError[]
   const [course, name, teacherName] = row.map(text); if (!(course in courses) && course !== "共通" || !name || !teacherName) { errors.push({ file: `${gradeLevel}年科目CSV`, row: row.sourceRow, field: "入力値", reason: "専攻・科目名・担当講師を確認してください。" }); return []; }
   return [{ course: course as SubjectRow["course"], name, teacherName, gradeLevel }];
 });
-const parseStudents = (source: string, targetYear: number, errors: RowError[]): StudentRow[] => parseCsv("新入生CSV", source, headers.students, errors).flatMap((row) => {
+const parseStudents = (source: string, targetYear: number, errors: RowError[]): StudentRow[] => parseCsv("新入生CSV", source, headers.students, errors, rolloverHeaderAliases.students).flatMap((row) => {
   if (row.length !== headers.students.length) return [];
   const [studentNumber, name, kana, ageRaw, birthDate, gender, email, phone, postalCode, address, course] = row.map(text); const age = Number(ageRaw); const number = row.sourceRow;
   if (!studentNumber || !name || !kana || !Number.isInteger(age) || !validBirthDate(birthDate) || age !== ageAtYear(birthDate, targetYear) || (gender !== "男" && gender !== "女") || !validEmail(email) || !(course in courses)) { errors.push({ file: "新入生CSV", row: number, field: "入力値", reason: "学籍番号、氏名、年齢と生年月日、性別、メール、専攻を確認してください。" }); return []; }

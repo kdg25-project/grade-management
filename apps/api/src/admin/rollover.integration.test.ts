@@ -42,6 +42,20 @@ describe("annual rollover", () => {
     expect(parseCsv("x", "a,b\n", ["専攻"], errors)).toEqual([]); expect(errors).not.toHaveLength(0);
     expect(parseCsv("x", "専攻,科目名,担当講師\n共通,\"基礎\"不正,山田\n", ["専攻", "科目名", "担当講師"], [])).toEqual([]);
   });
+  it("accepts ordinary-import headers for rollover while keeping header validation strict", async () => {
+    const { service } = setup();
+    const ordinaryImportHeaders = {
+      teachers: csv.teachers.replace("氏名,ひらがな,年齢,性別,メールアドレス", "氏名,氏名（ひらがな）,年齢,性別,メールアドレス"),
+      students: csv.students.replace("学籍番号,氏名,ひらがな,年齢,生年月日,性別,メール,電話,郵便番号,住所,専攻", "学籍番号,氏名,氏名（ひらがな）,年齢,生年月日,性別,メールアドレス,電話番号,郵便番号,住所,専攻"),
+    };
+    const compatible = await service.preview({ ...input(), teachersCsv: ordinaryImportHeaders.teachers, newStudentsCsv: ordinaryImportHeaders.students });
+    expect(compatible.errors).toEqual([]);
+
+    const reordered = await service.preview({ ...input(), teachersCsv: ordinaryImportHeaders.teachers.replace("氏名,氏名（ひらがな）,年齢", "年齢,氏名,氏名（ひらがな）") });
+    expect(reordered.errors).toContainEqual(expect.objectContaining({ file: "講師CSV", row: 1, field: "見出し" }));
+    const unknown = await service.preview({ ...input(), newStudentsCsv: ordinaryImportHeaders.students.replace("電話番号", "電話連絡先") });
+    expect(unknown.errors).toContainEqual(expect.objectContaining({ file: "新入生CSV", row: 1, field: "見出し" }));
+  });
   it("previews without mutation and reports invalid values", async () => {
     const { database, service } = setup(); const preview = await service.preview(input()); expect(preview.errors).toEqual([]); expect(preview.graduationCandidates).toBe(1); expect(preview.subjectCounts).toEqual({ 1: 1, 2: 0, 3: 0 }); expect(database.query("SELECT count(*) AS count FROM subjects").get()).toEqual({ count: 0 });
     database.exec("INSERT INTO students VALUES ('failed','F-1','留年','りゅうねん','2005-04-01','男',NULL,NULL,NULL,NULL,'system-engineer',2023,'enrolled',NULL,0,NULL,1,0,0),('suspended','S-1','休学','きゅうがく','2005-04-01','男',NULL,NULL,NULL,NULL,'system-engineer',2023,'suspended',NULL,0,NULL,0,0,0)");
