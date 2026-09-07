@@ -59,10 +59,15 @@ export function SubjectsPage() {
 function SubjectCard({ subject, year }: Readonly<{ subject: GradeSubject; year: number }>) {
   const currentTerm = subject.editableTerm;
   const finalizedTerm = subject.termStatuses.filter((status) => status.isFinalized).map((status) => termLabel(status.term)).join("・");
-  const status = subject.editable && currentTerm ? `${termLabel(currentTerm)}を入力中` : subject.termStatuses.every((item) => item.isFinalized) ? "すべて確定済み" : "閲覧のみ";
+  const status = subject.editable && currentTerm ? `${termLabel(currentTerm)}入力中` : subject.termStatuses.every((item) => item.isFinalized) ? "すべて確定済み" : "閲覧のみ";
   return <article className={currentTerm ? "subjectCard currentSubject" : "subjectCard"}>
-    <div className="subjectStatus"><span className={currentTerm ? "statusIcon current" : "statusIcon"} aria-hidden="true" />{currentTerm ? `いま入力する学期：${termLabel(currentTerm)}` : status}</div>
-    <div className="subjectInfo"><h3>{subject.name}</h3><p>{subject.gradeLevel}年生</p><dl><div><dt>年度</dt><dd>{year}年度</dd></div><div><dt>入力学期</dt><dd>{currentTerm ? termLabel(currentTerm) : "なし"}</dd></div><div><dt>確定済み</dt><dd>{finalizedTerm || "なし"}</dd></div></dl><p className="subjectDescription">{status}</p></div>
-    <Link className="subjectLink" to={`/teacher/subjects/${subject.id}/grades?year=${year}&term=${currentTerm ?? 1}`}><span>{currentTerm ? "成績表を開く" : "成績を確認する"}</span><ArrowRight aria-hidden="true" /></Link>
+    <div className="subjectCardHeader">
+      <div className="subjectInfo"><h3>{subject.name}</h3><p className="subjectMeta">{subject.gradeLevel}年生 · {year}年度</p></div>
+      <span className={currentTerm ? "subjectState current" : "subjectState"}>{status}</span>
+    </div>
+    <div className="subjectCardFooter">
+      <p className="subjectFinalized">確定済み：<strong>{finalizedTerm || "なし"}</strong></p>
+      <Link className="subjectLink" to={`/teacher/subjects/${subject.id}/grades?year=${year}&term=${currentTerm ?? 1}`}><span>{currentTerm ? "成績表を開く" : "成績を確認する"}</span><ArrowRight aria-hidden="true" /></Link>
+    </div>
   </article>;
 }
