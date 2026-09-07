@@ -17,6 +17,8 @@ export type GradeExportQuery = { academicYear?: number; scope: GradeExportScope;
 export type ResolvedGradeExportQuery = Omit<GradeExportQuery, "academicYear"> & { academicYear: number; years: number[] };
 export type GradeExportPreview = { token: string; rowCount: number; academicYear: number; years: number[]; scope: GradeExportScope; format: GradeExportFormat };
 export type GradeExportRow = { id: string; studentNumber: string; studentName: string; academicYear: number; term: number; courseName: string; gradeLevel: number; subjectName: string; attendanceRate: number; letterGrade: string };
+const gradeLabel: Record<string, string> = { S: "秀", A: "優", B: "良", C: "可", F: "不可" };
+const displayGrade = (grade: string) => gradeLabel[grade] ?? grade;
 export type BrowserBinding = Pick<BrowserRun, "quickAction">;
 
 const MAX_ROWS = 10_000; const MAX_BYTES = 5_000_000;
@@ -31,7 +33,7 @@ const escapeTextCell = (value: string | null) => {
   if (/^[\u0000-\u0020]*[=+\-@]/.test(text)) text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 };
-const line = (row: GradeExportRow) => [escapeTextCell(row.studentNumber), escapeTextCell(row.studentName), row.academicYear, row.term, escapeTextCell(row.courseName), row.gradeLevel, escapeTextCell(row.subjectName), row.attendanceRate, escapeTextCell(row.letterGrade)].join(",");
+const line = (row: GradeExportRow) => [escapeTextCell(row.studentNumber), escapeTextCell(row.studentName), row.academicYear, row.term, escapeTextCell(row.courseName), row.gradeLevel, escapeTextCell(row.subjectName), row.attendanceRate, escapeTextCell(displayGrade(row.letterGrade))].join(",");
 export const toGradeCsv = (rows: GradeExportRow[]) => `\uFEFF${[headers.join(","), ...rows.map(line)].join("\r\n")}\r\n`;
 const escapeHtml = (value: string | number) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 const formatGeneratedAt = (value: number) => new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Tokyo" }).format(new Date(value * 1000));
@@ -39,7 +41,7 @@ const formatGeneratedAt = (value: number) => new Intl.DateTimeFormat("ja-JP", { 
 export const toGradePdfHtml = (rows: GradeExportRow[], input: { academicYear: number; scope: GradeExportScope; generatedAt: number }) => `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
 @page { size: A4 landscape; margin: 14mm 10mm 16mm; }
 * { box-sizing: border-box; } body { color: #172033; font-family: "IPAfont Gothic", "Noto Sans CJK JP", sans-serif; font-size: 9pt; } h1 { font-size: 16pt; margin: 0 0 3mm; } p { margin: 0 0 5mm; } table { border-collapse: collapse; width: 100%; } thead { display: table-header-group; } tr { break-inside: avoid; } th, td { border: .25mm solid #aeb8c8; padding: 1.5mm; text-align: left; vertical-align: top; } th { background: #e8eef8; white-space: nowrap; } td.num { text-align: right; }
-</style></head><body><h1>成績一覧</h1><p>対象: ${escapeHtml(gradeExportScopeLabels[input.scope])} ／ 基準年度: ${escapeHtml(input.academicYear)}年度 ／ 作成日時: ${escapeHtml(formatGeneratedAt(input.generatedAt))}</p><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.studentNumber)}</td><td>${escapeHtml(row.studentName)}</td><td class="num">${escapeHtml(row.academicYear)}</td><td class="num">${escapeHtml(row.term)}</td><td>${escapeHtml(row.courseName)}</td><td class="num">${escapeHtml(row.gradeLevel)}</td><td>${escapeHtml(row.subjectName)}</td><td class="num">${escapeHtml(row.attendanceRate)}</td><td>${escapeHtml(row.letterGrade)}</td></tr>`).join("")}</tbody></table></body></html>`;
+</style></head><body><h1>成績一覧</h1><p>対象: ${escapeHtml(gradeExportScopeLabels[input.scope])} ／ 基準年度: ${escapeHtml(input.academicYear)}年度 ／ 作成日時: ${escapeHtml(formatGeneratedAt(input.generatedAt))}</p><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.studentNumber)}</td><td>${escapeHtml(row.studentName)}</td><td class="num">${escapeHtml(row.academicYear)}</td><td class="num">${escapeHtml(row.term)}</td><td>${escapeHtml(row.courseName)}</td><td class="num">${escapeHtml(row.gradeLevel)}</td><td>${escapeHtml(row.subjectName)}</td><td class="num">${escapeHtml(row.attendanceRate)}</td><td>${escapeHtml(displayGrade(row.letterGrade))}</td></tr>`).join("")}</tbody></table></body></html>`;
 
 export const resolveExportYears = (academicYear: number, scope: GradeExportScope) => {
   switch (scope) {

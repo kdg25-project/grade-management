@@ -4,7 +4,15 @@ import type { InferResponseType } from "hono/client";
 
 type Failure = { error: { code: string; message: string } };
 const isFailure = (body: unknown): body is Failure => typeof body === "object" && body !== null && "error" in body && typeof body.error === "object" && body.error !== null && "code" in body.error && "message" in body.error;
-const success = <T>(body: T | Failure, status: number) => { if (isFailure(body)) throw new GradeApiError(body.error.code, body.error.message, status); return body; };
+const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+const invalidResponse = () => new GradeApiError("INVALID_RESPONSE", "サーバーから正しい応答を受け取れませんでした。入力内容は保持されています。", 502);
+const success = <T>(body: T | Failure, status: number) => { if (isFailure(body)) throw new GradeApiError(body.error.code, body.error.message, status); if (status < 200 || status >= 300) throw new GradeApiError("REQUEST_FAILED", "操作に失敗しました。入力内容は保持されています。", status); return body; };
+const isRowError = (value: unknown) => { const item = record(value); return Boolean(item && (item.row === undefined || item.row === null || typeof item.row === "number") && typeof item.file === "string" && typeof item.field === "string" && typeof item.reason === "string"); };
+const isRolloverPreview = (value: unknown): value is RolloverPreviewResponse => { const item = record(value); const counts = record(item?.subjectCounts); return Boolean(item && typeof item.targetYear === "number" && typeof item.graduationCandidates === "number" && typeof item.teacherCount === "number" && typeof item.studentCount === "number" && counts && [1, 2, 3].every((grade) => typeof counts[grade] === "number") && Array.isArray(item.errors) && item.errors.every(isRowError)); };
+const isImportCounts = (value: unknown) => { const item = record(value); const subjects = record(item?.subjects); return Boolean(item && typeof item.students === "number" && typeof item.teachers === "number" && typeof item.staff === "number" && subjects && [1, 2, 3].every((grade) => typeof subjects[grade] === "number")); };
+const isNormalImportPreview = (value: unknown): value is NormalImportPreviewResponse => { const item = record(value); return Boolean(item && typeof item.academicYear === "number" && (item.token === undefined || typeof item.token === "string") && (item.expiresAt === undefined || typeof item.expiresAt === "number") && isImportCounts(item.counts) && Array.isArray(item.errors) && item.errors.every(isRowError)); };
+const isCredential = (value: unknown) => { const item = record(value); return Boolean(item && typeof item.name === "string" && typeof item.email === "string" && (item.role === "teacher" || item.role === "admin") && typeof item.temporaryPassword === "string"); };
+const isNormalImportApply = (value: unknown): value is NormalImportApplyResponse => { const item = record(value); return Boolean(item && item.applied === true && typeof item.replayed === "boolean" && typeof item.credentialsAlreadyIssued === "boolean" && isImportCounts(item.summary) && Array.isArray(item.credentials) && item.credentials.every(isCredential)); };
 
 export async function getAdminYears() { const response = await apiClient.api.admin.years.$get(); return success(await response.json(), response.status); }
 export async function selectAdminYear(year: number) { const response = await apiClient.api.admin.years.current.$post({ json: { year } }); return success(await response.json(), response.status); }
@@ -53,8 +61,8 @@ const rolloverApplyEndpoint = apiClient.api.admin.rollover.apply.$post;
 export type RolloverPreviewResponse = InferResponseType<typeof rolloverPreviewEndpoint, 200>;
 export type RolloverApplyResponse = InferResponseType<typeof rolloverApplyEndpoint, 200>;
 export type RolloverInput = { targetYear: number; idempotencyKey?: string; teachersCsv: string; grade1SubjectsCsv: string; grade2SubjectsCsv: string; grade3SubjectsCsv: string; newStudentsCsv: string };
-export async function previewRollover(json: RolloverInput, signal?: AbortSignal) { const response = await apiClient.api.admin.rollover.preview.$post({ json }, { init: { signal } }); return success(await response.json(), response.status); }
-export async function applyRollover(json: RolloverInput & { idempotencyKey: string }) { const response = await apiClient.api.admin.rollover.apply.$post({ json }); return success(await response.json(), response.status); }
+export async function previewRollover(json: RolloverInput, signal?: AbortSignal) { const response = await apiClient.api.admin.rollover.preview.$post({ json }, { init: { signal } }); const body = success(await response.json(), response.status); if (!isRolloverPreview(body)) throw invalidResponse(); return body; }
+export async function applyRollover(json: RolloverInput & { idempotencyKey: string }) { const response = await apiClient.api.admin.rollover.apply.$post({ json }); const body = success(await response.json(), response.status); const item = record(body); if (!item || item.applied !== true || !isRolloverPreview(item.summary)) throw invalidResponse(); return body; }
 
 const gradeExportPreviewEndpoint = apiClient.api.admin["grade-export"].preview.$post;
 export type GradeExportPreviewResponse = InferResponseType<typeof gradeExportPreviewEndpoint, 200>;
@@ -72,8 +80,10 @@ export type NormalImportPreviewResponse = InferResponseType<typeof normalImportP
 export type NormalImportApplyResponse = InferResponseType<typeof normalImportApplyEndpoint, 200>;
 export type NormalImportKind = "students" | "teachers" | "staff" | "subjects";
 export type NormalImportInput = { academicYear: number; kind: NormalImportKind; csv: string; gradeLevel?: 1 | 2 | 3 };
-export async function previewNormalImport(json: NormalImportInput, signal?: AbortSignal) { const response = await normalImportPreviewEndpoint({ json }, { init: { signal } }); return success(await response.json(), response.status); }
-export async function applyNormalImport(json: { token: string; idempotencyKey: string }) { const response = await normalImportApplyEndpoint({ json }); return success(await response.json(), response.status); }
+export async function previewNormalImport(json: NormalImportInput, signal?: AbortSignal) { const response = await normalImportPreviewEndpoint({ json }, { init: { signal } }); const body = success(await response.json(), response.status); if (!isNormalImportPreview(body)) throw invalidResponse(); return body; }
+export async function applyNormalImport(json: { token: string; idempotencyKey: string }) { const response = await normalImportApplyEndpoint({ json }); const body = success(await response.json(), response.status); if (!isNormalImportApply(body)) throw invalidResponse(); return body; }
+
+export const responseShape = { isNormalImportPreview, isNormalImportApply, isRolloverPreview };
 
 export type AdminYearsResponse = Awaited<ReturnType<typeof getAdminYears>>;
 export type AdminStudentsResponse = Awaited<ReturnType<typeof getAdminStudents>>;

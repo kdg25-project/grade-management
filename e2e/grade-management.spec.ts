@@ -247,8 +247,8 @@ test.describe("grade-management local smoke", () => {
     await page.getByRole("button", { name: "初期比重を保存" }).click();
     await expect(page.getByText("評価比重を保存しました。成績を再計算しました。")).toBeVisible();
     await page.getByLabel("開発用 学生の出席率").fill("95");
-    await page.getByLabel("開発用 学生の平常点").fill("9");
-    await page.getByLabel("開発用 学生の課題点").fill("8");
+    await page.getByLabel("開発用 学生の授業態度").fill("9");
+    await page.getByLabel("開発用 学生の課題").fill("8");
     const saveStarted = performance.now();
     const gradeSaveResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "PUT");
     const gradeRefreshResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "GET");
@@ -262,8 +262,8 @@ test.describe("grade-management local smoke", () => {
     const persistedAttendance = page.getByLabel("開発用 学生の出席率");
     await expect(persistedAttendance).toHaveValue("95");
     expect(performance.now() - saveStarted).toBeLessThan(10_000);
-    await expect(page.getByLabel("開発用 学生の平常点")).toHaveValue("9");
-    await expect(page.getByLabel("開発用 学生の課題点")).toHaveValue("8");
+    await expect(page.getByLabel("開発用 学生の授業態度")).toHaveValue("9");
+    await expect(page.getByLabel("開発用 学生の課題")).toHaveValue("8");
 
     await ensureAdminSession(page, credentials);
     await expect(page.getByRole("heading", { name: "成績管理ダッシュボード" })).toBeVisible();
@@ -312,24 +312,24 @@ test.describe("grade-management local smoke", () => {
 
     await page.goto("/admin/grades");
     await expect(page.getByRole("heading", { name: "成績と再試験履歴を確認する" })).toBeVisible();
-    const initialGradeRow = page.getByRole("row", { name: /開発用 学生.*開発用データベース・前期.*S.*詳細・修正/u });
+    const initialGradeRow = page.getByRole("row", { name: /開発用 学生.*開発用データベース・前期.*秀.*詳細・修正/u });
     await initialGradeRow.getByRole("button", { name: "詳細・修正" }).click();
     await expect(page.getByRole("heading", { name: "開発用 学生さん・開発用データベース" })).toBeVisible();
     await page.getByLabel("出席率").fill("0");
-    await page.getByLabel("平常点（1〜10）").fill("1");
-    await page.getByLabel("課題点（1〜10）").fill("1");
+    await page.getByLabel("授業態度（1〜10）").fill("1");
+    await page.getByLabel("課題（1〜10）").fill("1");
     await page.getByLabel("理由").fill("E2E: 確定済み評価を再試験対象へ修正");
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "最新成績を修正" }).click();
-    await expect(page.getByText(/1回目: F/u)).toBeVisible();
+    await expect(page.getByText(/1回目: 不可/u)).toBeVisible();
     await page.getByLabel("出席率").fill("95");
-    await page.getByLabel("平常点（1〜10）").fill("9");
-    await page.getByLabel("課題点（1〜10）").fill("8");
+    await page.getByLabel("授業態度（1〜10）").fill("9");
+    await page.getByLabel("課題（1〜10）").fill("8");
     await page.getByLabel("理由").fill("E2E: 確定済みFの再試験合格");
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "再試験を登録" }).click();
-    await expect(page.getByText(/2回目: S/u)).toBeVisible();
-    await expect(page.getByText(/1回目: F/u)).toBeVisible();
+    await expect(page.getByText(/2回目: 秀/u)).toBeVisible();
+    await expect(page.getByText(/1回目: 不可/u)).toBeVisible();
 
     await page.goto("/admin/exports");
     await expect(page.getByRole("heading", { name: "成績出力" })).toBeVisible();
@@ -358,8 +358,8 @@ test.describe("grade-management local smoke", () => {
     expect(gradeCsvLines[0]).toBe(`\uFEFF${gradeExportHeaders.join(",")}`);
     const gradeCsvRows = gradeCsvLines.slice(1).filter(Boolean).map((line) => line.split(","));
     const retakeRows = gradeCsvRows.filter((row) => row[0] === "D27-001" && row[6] === "開発用データベース");
-    expect(retakeRows).toEqual([["D27-001", "開発用 学生", "2027", "1", "システムエンジニア", "1", "開発用データベース", "95", "S"]]);
-    expect(gradeCsvRows.some((row) => row[0] === "D27-001" && row[6] === "開発用データベース" && row[8] === "F")).toBeFalsy();
+    expect(retakeRows).toEqual([["D27-001", "開発用 学生", "2027", "1", "システムエンジニア", "1", "開発用データベース", "95", "秀"]]);
+    expect(gradeCsvRows.some((row) => row[0] === "D27-001" && row[6] === "開発用データベース" && row[8] === "不可")).toBeFalsy();
 
     await ensureTeacherSession(page, credentials);
     await expect(page.getByText("いま入力する学期：後期")).toBeVisible();
@@ -369,8 +369,8 @@ test.describe("grade-management local smoke", () => {
     await page.getByRole("button", { name: "初期比重を保存" }).click();
     await expect(page.getByText("評価比重を保存しました。成績を再計算しました。")).toBeVisible();
     await page.getByLabel("開発用 学生の出席率").fill("90");
-    await page.getByLabel("開発用 学生の平常点").fill("8");
-    await page.getByLabel("開発用 学生の課題点").fill("9");
+    await page.getByLabel("開発用 学生の授業態度").fill("8");
+    await page.getByLabel("開発用 学生の課題").fill("9");
     await page.getByRole("button", { name: "変更を保存" }).click();
     await expect(page.getByText("成績を保存しました。")).toBeVisible();
 

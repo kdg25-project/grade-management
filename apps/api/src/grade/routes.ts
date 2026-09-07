@@ -28,13 +28,13 @@ const gradeWrite = (value: unknown): GradeWrite => {
   return {
     studentId: body.studentId,
     attendanceRate: nullableInteger(body.attendanceRate, "出席率"),
-    attitude: nullableInteger(body.attitude, "平常点"),
-    assignment: nullableInteger(body.assignment, "課題点"),
+    attitude: nullableInteger(body.attitude, "授業態度"),
+    assignment: nullableInteger(body.assignment, "課題"),
   };
 };
 const gradeInputs = (value: unknown): GradeInputs => {
   const body = record(value); if (!body) throw invalid("INVALID_GRADE_INPUT", "成績を正しく入力してください。");
-  return { attendanceRate: nullableInteger(body.attendanceRate, "出席率"), attitude: nullableInteger(body.attitude, "平常点"), assignment: nullableInteger(body.assignment, "課題点") };
+  return { attendanceRate: nullableInteger(body.attendanceRate, "出席率"), attitude: nullableInteger(body.attitude, "授業態度"), assignment: nullableInteger(body.assignment, "課題") };
 };
 const gradeWrites = (value: unknown): GradeWrite[] => {
   const body = record(value);

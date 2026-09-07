@@ -370,7 +370,7 @@ export class D1GradeService implements GradeService {
       ]);
       const count = (students: GradeStudent[]) => ({
         eligible: students.filter((student) => student.status === "enrolled").length,
-        complete: students.filter((student) => student.status === "enrolled" && student.grade?.attendanceRate !== null && student.grade?.attitude !== null && student.grade?.assignment !== null).length,
+        complete: students.filter((student) => student.status === "enrolled" && student.grade?.attendanceRate != null && student.grade?.attitude != null && student.grade?.assignment != null).length,
       });
       const editable = academicYear === currentAcademicYear;
       return { ...subject, editable, editableTerm: editable ? editableTermForStatuses(term1Finalized, term2Finalized) : null,
@@ -538,11 +538,11 @@ export class D1GradeService implements GradeService {
       // The unique attempt key is the final concurrency guard; normalize the
       // expected losing insert into the stable 409 domain response.
       if (String(error).includes("UNIQUE constraint failed: grades.student_id")) {
-        throw new GradeDomainError("RETAKE_NOT_AVAILABLE", "最新の確定済みF評価のみ再試験にできます。", 409);
+        throw new GradeDomainError("RETAKE_NOT_AVAILABLE", "最新の確定済み不可評価のみ再試験にできます。", 409);
       }
       throw error;
     }
-    if ((result[0]?.meta.changes ?? 0) !== 1) throw new GradeDomainError("RETAKE_NOT_AVAILABLE", "最新の確定済みF評価のみ再試験にできます。", 409);
+    if ((result[0]?.meta.changes ?? 0) !== 1) throw new GradeDomainError("RETAKE_NOT_AVAILABLE", "最新の確定済み不可評価のみ再試験にできます。", 409);
     const row = await this.first<{ attempt: number }>(this.database.prepare("SELECT attempt FROM grades WHERE id=?").bind(id));
     return { id, attempt: asNumber(row?.attempt), letterGrade: calculated.letterGrade };
   }

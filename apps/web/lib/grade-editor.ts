@@ -6,7 +6,7 @@ export type DraftRow = { studentId: string; studentNumber: string; name: string;
 export type GradeField = keyof DraftValues;
 
 export const fieldRange: Record<GradeField, readonly [number, number]> = { attendanceRate: [0, 100], attitude: [1, 10], assignment: [1, 10] };
-export const fieldLabel: Record<GradeField, string> = { attendanceRate: "出席率", attitude: "平常点", assignment: "課題点" };
+export const fieldLabel: Record<GradeField, string> = { attendanceRate: "出席率", attitude: "授業態度", assignment: "課題" };
 
 export function rowsFromStudents(students: GradeStudent[]): DraftRow[] {
   return students.map((student) => {

@@ -14,7 +14,7 @@ describe("grade export snapshots (SQLite)", () => {
   it("materializes finalized values and remains exact after source state changes", async () => {
     const { database, service } = setup(); const preview = await service.preview("admin", { scope: "term", format: "csv", term: 1 }); expect(preview.rowCount).toBe(1); expect(database.query("SELECT attendance_rate FROM grade_export_snapshot_rows").get()).toEqual({ attendance_rate: 88 });
     database.exec("UPDATE grades SET attendance_rate=0,letter_grade='F'; UPDATE subject_term_statuses SET is_finalized=0; INSERT INTO subjects VALUES('sub2',2027,'新規科目',1); INSERT INTO subject_term_statuses VALUES('sub2',1,1); INSERT INTO grades VALUES('g2','s1','sub2',2027,1,1,100,'S')");
-    const file = await service.download("admin", preview.token); expect(file.csv).toContain("初期科目"); expect(file.csv).toContain(",88,A"); expect(file.csv).not.toContain("新規科目"); expect(database.query("SELECT count(*) AS count FROM audit_logs WHERE action='grades_exported'").get()).toEqual({ count: 1 });
+    const file = await service.download("admin", preview.token); expect(file.csv).toContain("初期科目"); expect(file.csv).toContain(",88,優"); expect(file.csv).not.toContain("新規科目"); expect(database.query("SELECT count(*) AS count FROM audit_logs WHERE action='grades_exported'").get()).toEqual({ count: 1 });
     const payload = String((database.query("SELECT payload_json FROM audit_logs").get() as { payload_json: string }).payload_json); expect(payload).not.toContain("初期氏名"); expect(payload).not.toContain(preview.token);
     await expect(service.download("admin", preview.token)).rejects.toMatchObject({ code: "EXPORT_SNAPSHOT_NOT_FOUND", status: 404 });
   });
@@ -25,8 +25,8 @@ describe("grade export snapshots (SQLite)", () => {
     expect(preview.rowCount).toBe(1);
     expect(database.query("SELECT attendance_rate,letter_grade FROM grade_export_snapshot_rows").get()).toEqual({ attendance_rate: 80, letter_grade: "B" });
     const file = await service.download("admin", preview.token);
-    expect(file.csv).toContain(",80,B");
-    expect(file.csv).not.toContain(",50,F");
+    expect(file.csv).toContain(",80,良");
+    expect(file.csv).not.toContain(",50,不可");
   });
   it("binds snapshots to owner and exposes grade_export audit filtering", async () => {
     const { service, d1 } = setup(); const preview = await service.preview("admin", { scope: "year_all_students", format: "csv" }); await expect(service.download("teacher", preview.token)).rejects.toMatchObject({ code: "EXPORT_SNAPSHOT_NOT_FOUND", status: 404 }); await service.download("admin", preview.token);

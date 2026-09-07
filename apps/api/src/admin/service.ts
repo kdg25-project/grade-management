@@ -138,8 +138,9 @@ export class D1AdminMasterService implements AdminMasterService {
     return { currentAcademicYear, academicYear, total: asNumber(total?.count ?? 0), items: rows.map((row) => ({ id: String(row.id), studentNumber: String(row.studentNumber), name: String(row.name), nameKana: String(row.nameKana), birthDate: String(row.birthDate), gender: String(row.gender), email: row.email == null ? null : String(row.email), phone: row.phone == null ? null : String(row.phone), postalCode: row.postalCode == null ? null : String(row.postalCode), address: row.address == null ? null : String(row.address), courseId: String(row.courseId), courseName: String(row.courseName), enrollmentYear: asNumber(row.enrollmentYear), status: studentStatusFromDb(row.status), statusEffectiveAcademicYear: row.statusEffectiveAcademicYear == null ? null : asNumber(row.statusEffectiveAcademicYear), gradeLevel: asNumber(row.gradeLevel) })) };
   }
   private async courseExists(courseId: string) { return Boolean(await this.first(this.database.prepare("SELECT id FROM courses WHERE id = ? LIMIT 1").bind(courseId))); }
+  private async academicYearExists(year: number) { return Boolean(await this.first(this.database.prepare("SELECT year FROM academic_years WHERE year = ? LIMIT 1").bind(year))); }
   async createStudent(actorId: string, input: StudentInput) {
-    const value = validateStudent(input); if (!await this.courseExists(value.courseId)) throw new AdminDomainError("COURSE_NOT_FOUND", "コースが見つかりません。", 404);
+    const value = validateStudent(input); if (!await this.academicYearExists(value.enrollmentYear)) throw new AdminDomainError("ACADEMIC_YEAR_NOT_FOUND", "入学年度が登録されていません。年度管理で追加してください。", 404); if (!await this.courseExists(value.courseId)) throw new AdminDomainError("COURSE_NOT_FOUND", "コースが見つかりません。", 404);
     const id = this.newId(); const timestamp = now();
     try { await this.database.batch([
       this.database.prepare("INSERT INTO students (id, student_number, name, name_kana, birth_date, gender, email, phone, postal_code, address, course_id, enrollment_year, status, status_changed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enrolled', ?, ?, ?)").bind(id, value.studentNumber, value.name, value.nameKana, value.birthDate, value.gender, value.email, value.phone, value.postalCode, value.address, value.courseId, value.enrollmentYear, timestamp, timestamp, timestamp),
@@ -148,7 +149,7 @@ export class D1AdminMasterService implements AdminMasterService {
     return { id };
   }
   async updateStudent(actorId: string, id: string, input: StudentInput) {
-    const value = validateStudent(input); if (!await this.courseExists(value.courseId)) throw new AdminDomainError("COURSE_NOT_FOUND", "コースが見つかりません。", 404);
+    const value = validateStudent(input); if (!await this.academicYearExists(value.enrollmentYear)) throw new AdminDomainError("ACADEMIC_YEAR_NOT_FOUND", "入学年度が登録されていません。年度管理で追加してください。", 404); if (!await this.courseExists(value.courseId)) throw new AdminDomainError("COURSE_NOT_FOUND", "コースが見つかりません。", 404);
     try { const result = await this.database.batch([
       this.database.prepare("UPDATE students SET student_number=?, name=?, name_kana=?, birth_date=?, gender=?, email=?, phone=?, postal_code=?, address=?, course_id=?, enrollment_year=?, updated_at=? WHERE id=?").bind(value.studentNumber, value.name, value.nameKana, value.birthDate, value.gender, value.email, value.phone, value.postalCode, value.address, value.courseId, value.enrollmentYear, now(), id),
       this.database.prepare("INSERT INTO audit_logs (id, actor_user_id, action, entity_type, entity_id, academic_year, payload_json) SELECT ?, ?, 'student_updated', 'student', ?, enrollment_year, ? FROM students WHERE id=? AND changes() = 1").bind(this.newId(), actorId, id, JSON.stringify({ studentNumber: value.studentNumber }), id),
@@ -250,7 +251,7 @@ export class D1AdminMasterService implements AdminMasterService {
   }
   async subjects(requestedYear?: number) {
     const currentAcademicYear = await this.currentYear(); const year = requestedYear ?? currentAcademicYear; validateYear(year);
-    const rows = await this.rows<SqlRow>(this.database.prepare("SELECT s.id, s.name, s.academic_year AS academicYear, s.grade_level AS gradeLevel, s.teacher_user_id AS teacherUserId, u.name AS teacherName, group_concat(sc.course_id) AS courseIds, max(CASE WHEN st.is_finalized = 1 THEN 1 ELSE 0 END) AS hasFinalizedTerm FROM subjects s JOIN user u ON u.id=s.teacher_user_id LEFT JOIN subject_courses sc ON sc.subject_id=s.id LEFT JOIN subject_term_statuses st ON st.subject_id=s.id WHERE s.academic_year=? GROUP BY s.id ORDER BY s.grade_level, s.name").bind(year));
+    const rows = await this.rows<SqlRow>(this.database.prepare("SELECT s.id, s.name, s.academic_year AS academicYear, s.grade_level AS gradeLevel, s.teacher_user_id AS teacherUserId, u.name AS teacherName, group_concat(DISTINCT sc.course_id) AS courseIds, max(CASE WHEN st.is_finalized = 1 THEN 1 ELSE 0 END) AS hasFinalizedTerm FROM subjects s JOIN user u ON u.id=s.teacher_user_id LEFT JOIN subject_courses sc ON sc.subject_id=s.id LEFT JOIN subject_term_statuses st ON st.subject_id=s.id WHERE s.academic_year=? GROUP BY s.id ORDER BY s.grade_level, s.name").bind(year));
     return { currentAcademicYear, items: rows.map((row) => ({ id: String(row.id), name: String(row.name), academicYear: asNumber(row.academicYear), gradeLevel: asNumber(row.gradeLevel), teacherUserId: String(row.teacherUserId), teacherName: String(row.teacherName), courseIds: typeof row.courseIds === "string" ? row.courseIds.split(",") : [], hasFinalizedTerm: asBoolean(row.hasFinalizedTerm) })) };
   }
   private async assertSubjectReferences(input: ReturnType<typeof validateSubject>) {

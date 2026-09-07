@@ -68,6 +68,12 @@ describe("D1 admin master service", () => {
     expect(database.query("SELECT academic_year FROM audit_logs WHERE action='academic_year_selected'").get()).toEqual({ academic_year: 2027 });
   });
 
+  it("rejects an unregistered enrollment year before a student write", async () => {
+    const { database, service } = setup();
+    await expect(service.createStudent("admin", { studentNumber: "2023-1", name: "学生", nameKana: "ガクセイ", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear: 2023 })).rejects.toMatchObject({ code: "ACADEMIC_YEAR_NOT_FOUND", status: 404 });
+    expect(database.query("SELECT count(*) AS count FROM students").get()).toEqual({ count: 0 });
+  });
+
   it("keeps student status history and audit in the same D1 batch", async () => {
     const { database, service } = setup(); const created = await service.createStudent("admin", { studentNumber: "100", name: "同名", nameKana: "ドウメイ", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear: 2026 });
     await service.changeStudentStatus("admin", created.id, "suspended", 2026, "休学届");
@@ -123,6 +129,7 @@ describe("D1 admin master service", () => {
   it("returns a bounded, historical student status snapshot for the requested academic year", async () => {
     const { database, service } = setup();
     await service.selectCurrentYear("admin", 2027);
+    database.exec("INSERT INTO academic_years VALUES (2024,0,NULL,0,0,0), (2025,0,NULL,0,0,0), (2028,0,NULL,0,0,0)");
     const create = (studentNumber: string, enrollmentYear: number) => service.createStudent("admin", { studentNumber, name: studentNumber, nameKana: "ガクセイ", birthDate: "2008-01-01", gender: "未回答", courseId: "course-1", enrollmentYear });
     const secondYear = await create("2026", 2026);
     const futureStatus = await create("2026-future-status", 2026);
@@ -156,6 +163,14 @@ describe("D1 admin master service", () => {
     const subject = await service.createSubject("admin", { name: "基礎", gradeLevel: 1, teacherUserId: teacher.id, courseIds: ["course-1"] });
     expect(database.query("SELECT count(*) AS count FROM subject_courses WHERE subject_id=?").get(subject.id)).toEqual({ count: 1 });
     expect(database.query("SELECT count(*) AS count FROM subject_term_statuses WHERE subject_id=?").get(subject.id)).toEqual({ count: 2 });
+  });
+
+  it("lists each subject course once when term statuses are also joined", async () => {
+    const { database, service } = setup();
+    database.exec("INSERT INTO courses VALUES ('course-2','デザイン')");
+    const teacher = await service.createTeacher("admin", { name: "新講師", email: "subject-list@example.test" });
+    await service.createSubject("admin", { name: "共通科目", gradeLevel: 1, teacherUserId: teacher.id, courseIds: ["course-1", "course-2"] });
+    expect((await service.subjects()).items.find((item) => item.name === "共通科目")?.courseIds.sort()).toEqual(["course-1", "course-2"]);
   });
 
   it("does not append audits when an update target does not exist", async () => {

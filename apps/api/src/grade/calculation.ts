@@ -26,14 +26,14 @@ const integerInRange = (value: number, minimum: number, maximum: number, code: s
 
 export const validateGradeInputs = (inputs: GradeInputs) => {
   if (inputs.attendanceRate !== null) integerInRange(inputs.attendanceRate, 0, 100, "INVALID_ATTENDANCE_RATE", "出席率");
-  if (inputs.attitude !== null) integerInRange(inputs.attitude, 1, 10, "INVALID_ATTITUDE", "平常点");
-  if (inputs.assignment !== null) integerInRange(inputs.assignment, 1, 10, "INVALID_ASSIGNMENT", "課題点");
+  if (inputs.attitude !== null) integerInRange(inputs.attitude, 1, 10, "INVALID_ATTITUDE", "授業態度");
+  if (inputs.assignment !== null) integerInRange(inputs.assignment, 1, 10, "INVALID_ASSIGNMENT", "課題");
 };
 
 export const validateGradeWeights = (weights: GradeWeights) => {
   integerInRange(weights.attendanceWeight, 0, 100, "INVALID_ATTENDANCE_WEIGHT", "出席率の比重");
-  integerInRange(weights.attitudeWeight, 0, 100, "INVALID_ATTITUDE_WEIGHT", "平常点の比重");
-  integerInRange(weights.assignmentWeight, 0, 100, "INVALID_ASSIGNMENT_WEIGHT", "課題点の比重");
+  integerInRange(weights.attitudeWeight, 0, 100, "INVALID_ATTITUDE_WEIGHT", "授業態度の比重");
+  integerInRange(weights.assignmentWeight, 0, 100, "INVALID_ASSIGNMENT_WEIGHT", "課題の比重");
   if (weights.attendanceWeight + weights.attitudeWeight + weights.assignmentWeight !== 100) {
     throw new GradeValidationError("INVALID_WEIGHT_TOTAL", "評価比重の合計を100にしてください。");
   }

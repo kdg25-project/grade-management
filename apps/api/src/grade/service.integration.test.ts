@@ -80,6 +80,13 @@ const setup = () => {
 };
 
 describe("D1 grade service integration", () => {
+  it("does not count an eligible student without a grade row as complete", async () => {
+    const { database, service } = setup();
+    database.exec("INSERT INTO students (id,student_number,name,course_id,enrollment_year,status) VALUES ('student-2','2','未入力学生','course-1',2026,'enrolled')");
+    await service.saveTeacherGrades("teacher-1", "subject-1", 1, [{ studentId: "student-1", attendanceRate: 80, attitude: 8, assignment: 8 }]);
+    expect((await service.adminSubjects()).subjects[0]?.completion[1]).toEqual({ eligible: 2, complete: 1 });
+  });
+
   it("only serves the current input term as editable and keeps both finalized terms readable", async () => {
     const { database, service } = setup();
     await expect(service.teacherGrades("teacher-1", "subject-1", 2)).rejects.toMatchObject({
