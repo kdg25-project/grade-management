@@ -263,18 +263,45 @@ test.describe("grade-management local smoke", () => {
     await expect(page).toHaveURL(/\/teacher\/subjects$/);
 
     const subjectsLoaded = performance.now();
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("link", { name: "成績表を開く" }).click();
     await expect(page.getByRole("heading", { name: "成績表" })).toBeVisible();
     expect(performance.now() - subjectsLoaded).toBeLessThan(3_000);
 
+    const weightDialog = page.getByRole("dialog", { name: "成績の計算方法を設定" });
+    await expect(weightDialog).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(weightDialog).toBeVisible();
+    const weightsEndpoint = "**/api/teacher/subjects/dev-subject/weights**";
+    await page.route(weightsEndpoint, async (route) => {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "GRADE_SERVICE_UNAVAILABLE", message: "E2E weight write failure" } }) });
+    });
+    await weightDialog.getByRole("button", { name: "初期比重を保存" }).click();
+    await expect(weightDialog.getByRole("alert")).toContainText("成績機能を利用できません");
+    await expect(weightDialog).toBeVisible();
+    await page.unroute(weightsEndpoint);
     const weightRefreshResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "GET");
-    await page.getByRole("button", { name: "初期比重を保存" }).click();
+    await weightDialog.getByRole("button", { name: "初期比重を保存" }).click();
     await expect(page.getByRole("status").filter({ hasText: "評価比重を保存しました。成績を再計算しました。" })).toBeVisible();
     expect((await weightRefreshResponse).status()).toBe(200);
-    await expect(page.getByRole("button", { name: "比重を保存" })).toBeVisible();
+    await expect(weightDialog).toBeHidden();
+    await expect(page.getByRole("button", { name: "比重設定" })).toBeVisible();
+    await page.getByRole("button", { name: "比重設定" }).click();
+    await weightDialog.getByLabel("出席率").fill("50");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(weightDialog).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole("button", { name: "比重設定" }).click();
+    await expect(weightDialog.getByLabel("出席率")).toHaveValue("50");
+    await weightDialog.getByRole("button", { name: "キャンセル" }).click();
     await page.getByLabel("開発用 学生の出席率").fill("95");
     await page.getByLabel("開発用 学生の授業態度").fill("9");
     await page.getByLabel("開発用 学生の課題").fill("8");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.getByLabel("開発用 学生の出席率")).toHaveValue("95");
+    await expect(page.getByLabel("開発用 学生の授業態度")).toHaveValue("9");
+    await expect(page.getByLabel("開発用 学生の課題")).toHaveValue("8");
     const saveStarted = performance.now();
     const gradeSaveResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "PUT");
     const gradeRefreshResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/grades") && response.request().method() === "GET");
@@ -290,6 +317,29 @@ test.describe("grade-management local smoke", () => {
     expect(performance.now() - saveStarted).toBeLessThan(10_000);
     await expect(page.getByLabel("開発用 学生の授業態度")).toHaveValue("9");
     await expect(page.getByLabel("開発用 学生の課題")).toHaveValue("8");
+    await expect(weightDialog).toBeHidden();
+    await page.getByRole("button", { name: "比重設定" }).click();
+    await expect(weightDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(weightDialog).toBeHidden();
+    const gradesEndpoint = "**/api/teacher/subjects/dev-subject/grades**";
+    let failPostWriteRefresh = true;
+    await page.route(gradesEndpoint, async (route) => {
+      if (failPostWriteRefresh && route.request().method() === "GET") {
+        failPostWriteRefresh = false;
+        await route.abort("failed");
+      } else await route.continue();
+    });
+    await page.getByRole("button", { name: "比重設定" }).click();
+    await weightDialog.getByLabel("出席率").fill("90");
+    await weightDialog.getByLabel("授業態度").fill("10");
+    const updatedWeightResponse = page.waitForResponse((response) => response.url().includes("/api/teacher/subjects/dev-subject/weights") && response.request().method() === "PUT");
+    await weightDialog.getByRole("button", { name: "比重を保存" }).click();
+    expect((await updatedWeightResponse).ok()).toBeTruthy();
+    await expect(page.getByRole("alert").filter({ hasText: "最新の成績を読み込めませんでした" })).toBeVisible();
+    await expect(page.getByLabel("開発用 学生の出席率")).toBeEnabled();
+    await expect(page.getByText("90%", { exact: true })).toBeVisible();
+    await page.unroute(gradesEndpoint);
 
     await ensureAdminSession(page, credentials);
     await expect(page.getByRole("heading", { name: "成績管理ダッシュボード" })).toBeVisible();
@@ -391,11 +441,14 @@ test.describe("grade-management local smoke", () => {
     expect(gradeCsvRows.some((row) => row[0] === "D27-001" && row[6] === "開発用データベース" && row[8] === "不可")).toBeFalsy();
 
     await ensureTeacherSession(page, credentials);
-    await expect(page.getByText("いま入力する学期：後期")).toBeVisible();
+    await expect(page.getByText("後期入力中", { exact: true })).toBeVisible();
     await page.goto("/teacher/subjects/dev-subject/grades?term=1&year=2027");
     await expect(page).toHaveURL(/term=2/);
     await expect(page.getByText("2027年度 後期")).toBeVisible();
-    await page.getByRole("button", { name: "初期比重を保存" }).click();
+    const secondTermWeightDialog = page.getByRole("dialog", { name: "成績の計算方法を設定" });
+    await expect(secondTermWeightDialog).toBeVisible();
+    await secondTermWeightDialog.getByRole("button", { name: "初期比重を保存" }).click();
+    await expect(secondTermWeightDialog).toBeHidden();
     await expect(page.getByRole("status").filter({ hasText: "評価比重を保存しました。成績を再計算しました。" })).toBeVisible();
     await page.getByLabel("開発用 学生の出席率").fill("90");
     await page.getByLabel("開発用 学生の授業態度").fill("8");
@@ -410,7 +463,7 @@ test.describe("grade-management local smoke", () => {
 
     await ensureTeacherSession(page, credentials);
     const finalizedSubject = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "開発用データベース" }) });
-    await expect(finalizedSubject.getByText("すべて確定済み", { exact: true })).toHaveCount(2);
+    await expect(finalizedSubject.getByText("すべて確定済み", { exact: true })).toHaveCount(1);
 
     await ensureAdminSession(page, credentials);
     page.once("dialog", (dialog) => dialog.accept("E2E: entry correction requested"));
@@ -433,7 +486,7 @@ test.describe("grade-management local smoke", () => {
     await expect(auditLog.getByRole("article").filter({ hasText: "通常CSVを一括取込" })).toHaveCount(0);
 
     await ensureTeacherSession(page, credentials);
-    await expect(page.getByText("いま入力する学期：後期")).toBeVisible();
+    await expect(page.getByText("後期入力中", { exact: true })).toBeVisible();
     await page.getByRole("link", { name: "成績表を開く" }).click();
     await expect(page.getByLabel("開発用 学生の出席率")).toBeEditable();
   });

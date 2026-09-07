@@ -147,10 +147,31 @@ h3 { margin: 0; font-size: 20px; }
 .weightPanel { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin: 20px 0; padding: 18px 20px; border: 1px solid #cad5cd; border-radius: 10px; background: #fff; }
 .weightPanel h2 { margin-bottom: 5px; }
 .weightPanel p { margin: 5px 0 0; color: #617066; font-size: 13px; line-height: 1.5; }
+.weightPanelActions { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 14px; }
+.weightSummary { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
+.weightSummary div { min-width: 58px; padding-right: 10px; border-right: 1px solid #d7e0d9; }
+.weightSummary div:last-child { padding-right: 0; border-right: 0; }
+.weightSummary dt { color: #68786e; font-size: 11px; font-weight: 800; }
+.weightSummary dd { margin: 2px 0 0; color: #284a38; font-size: 14px; font-weight: 800; }
 .weightControls { display: flex; flex-wrap: wrap; align-items: end; justify-content: end; gap: 10px; }
 .weightControls label { display: grid; gap: 4px; color: #40584b; font-size: 12px; font-weight: 800; }
 .weightControls input { width: 76px; min-height: 40px; padding: 6px; border: 1px solid #aebeb3; border-radius: 6px; text-align: right; }
 .weightControls span { margin-left: -7px; margin-bottom: 11px; color: #627269; }
+.weightDialog { width: min(100% - 32px, 560px); margin: auto; padding: 0; border: 0; border-radius: 12px; box-shadow: 0 18px 48px rgb(25 47 34 / .28); color: #243d2e; }
+.weightDialog::backdrop { background: rgb(20 37 28 / .48); }
+.weightDialog > section { display: grid; gap: 18px; padding: 24px; }
+.weightDialog h2 { margin: 0; font-size: 21px; }
+.weightDialogHeader { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.weightDialogHeader .sectionEyebrow { margin: 0 0 4px; }
+.weightDialogHeader p:last-child { margin: 6px 0 0; color: #5a6c61; font-size: 14px; line-height: 1.55; }
+.weightDialog .weightControls { justify-content: start; }
+.weightDialog .weightControls label > div { display: flex; align-items: end; }
+.weightDialog .weightControls span { margin-bottom: 11px; }
+.weightDialog .inputHint, .weightDialog .formError { margin: -8px 0 0; }
+.weightDialogActions { display: flex; justify-content: end; gap: 10px; }
+.dialogClose { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid #aebeb3; border-radius: 50%; background: #fff; color: #355243; font-size: 24px; line-height: 1; cursor: pointer; }
+.dialogClose:hover:not(:disabled) { background: #edf5ef; }
+.dialogClose:disabled { color: #718076; cursor: not-allowed; }
 .adminSubjectList { display: grid; gap: 14px; }
 .adminSubjectCard { padding: 20px; border: 1px solid #cbd6ce; border-radius: 10px; background: #fff; }
 .adminSubjectCard h2 { margin: 0 0 16px; font-size: 21px; }
