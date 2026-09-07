@@ -33,8 +33,20 @@ const text = (value: string) => value.trim();
 const todayYear = () => new Date().getUTCFullYear();
 const utf8Length = (value: string) => new TextEncoder().encode(value).byteLength;
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-const validBirthDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
-const ageAtYear = (birthDate: string, year: number) => year - Number(birthDate.slice(0, 4));
+const parseBirthDate = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) ?? /^(\d{4})年(\d{1,2})月(\d{1,2})日$/.exec(value);
+  if (!match) return null;
+  const normalized = `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+  const date = new Date(`${normalized}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === normalized ? normalized : null;
+};
+const tokyoToday = (date: Date) => {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+  const year = part("year"); const month = part("month"); const day = part("day");
+  if (!year || !month || !day) throw new Error("Unable to determine the Japan calendar date");
+  return `${year}-${month}-${day}`;
+};
 
 /** RFC4180 parser: CRLF/LF, quoted commas and escaped quotes. Input is decoded with fatal UTF-8 in the browser. */
 export const parseCsv = (file: string, source: string, expectedHeaders: readonly string[], errors: RowError[], headerAliases: readonly (readonly string[])[] = []) => {
@@ -78,12 +90,16 @@ const parseSubjects = (gradeLevel: 1 | 2 | 3, source: string, errors: RowError[]
   const [course, name, teacherName] = row.map(text); if (!(course in courses) && course !== "共通" || !name || !teacherName) { errors.push({ file: `${gradeLevel}年科目CSV`, row: row.sourceRow, field: "入力値", reason: "専攻・科目名・担当講師を確認してください。" }); return []; }
   return [{ course: course as SubjectRow["course"], name, teacherName, gradeLevel }];
 });
-const parseStudents = (source: string, targetYear: number, errors: RowError[]): StudentRow[] => parseCsv("新入生CSV", source, headers.students, errors, rolloverHeaderAliases.students).flatMap((row) => {
-  if (row.length !== headers.students.length) return [];
-  const [studentNumber, name, kana, ageRaw, birthDate, gender, email, phone, postalCode, address, course] = row.map(text); const age = Number(ageRaw); const number = row.sourceRow;
-  if (!studentNumber || !name || !kana || !Number.isInteger(age) || !validBirthDate(birthDate) || age !== ageAtYear(birthDate, targetYear) || (gender !== "男" && gender !== "女") || !validEmail(email) || !(course in courses)) { errors.push({ file: "新入生CSV", row: number, field: "入力値", reason: "学籍番号、氏名、年齢と生年月日、性別、メール、専攻を確認してください。" }); return []; }
-  return [{ studentNumber, name, kana, age, birthDate, gender, email: email.toLowerCase(), phone, postalCode, address, course: course as StudentRow["course"] }];
-});
+const parseStudents = (source: string, currentDate: Date, errors: RowError[]): StudentRow[] => {
+  const today = tokyoToday(currentDate);
+  return parseCsv("新入生CSV", source, headers.students, errors, rolloverHeaderAliases.students).flatMap((row) => {
+    if (row.length !== headers.students.length) return [];
+    const [studentNumber, name, kana, ageRaw, rawBirthDate, gender, email, phone, postalCode, address, course] = row.map(text); const age = Number(ageRaw); const birthDate = parseBirthDate(rawBirthDate); const number = row.sourceRow;
+    if (!birthDate || birthDate > today) { errors.push({ file: "新入生CSV", row: number, field: "生年月日", reason: "生年月日を正しく入力してください。" }); return []; }
+    if (!studentNumber || !name || !kana || !ageRaw || !Number.isInteger(age) || (gender !== "男" && gender !== "女") || !validEmail(email) || !(course in courses)) { errors.push({ file: "新入生CSV", row: number, field: "入力値", reason: "学籍番号、氏名、年齢、性別、メール、専攻を確認してください。" }); return []; }
+    return [{ studentNumber, name, kana, age, birthDate, gender, email: email.toLowerCase(), phone, postalCode, address, course: course as StudentRow["course"] }];
+  });
+};
 
 const digest = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))), (byte) => byte.toString(16).padStart(2, "0")).join("");
 const canonical = (input: RolloverInput) => JSON.stringify({ targetYear: input.targetYear, teachersCsv: input.teachersCsv, grade1SubjectsCsv: input.grade1SubjectsCsv, grade2SubjectsCsv: input.grade2SubjectsCsv, grade3SubjectsCsv: input.grade3SubjectsCsv, newStudentsCsv: input.newStudentsCsv });
@@ -99,7 +115,7 @@ export class D1RolloverService {
     const totalBytes = [input.teachersCsv, input.grade1SubjectsCsv, input.grade2SubjectsCsv, input.grade3SubjectsCsv, input.newStudentsCsv].reduce((total, csv) => total + utf8Length(csv), 0);
     if (totalBytes > MAX_TOTAL_CSV_BYTES) throw new AdminDomainError("ROLLOVER_PAYLOAD_TOO_LARGE", "年度更新用CSVの合計は450KB以下にしてください。");
     const errors: RowError[] = [];
-    const teachers = parseTeachers(input.teachersCsv, errors); const subjects = [...parseSubjects(1, input.grade1SubjectsCsv, errors), ...parseSubjects(2, input.grade2SubjectsCsv, errors), ...parseSubjects(3, input.grade3SubjectsCsv, errors)]; const students = parseStudents(input.newStudentsCsv, input.targetYear, errors);
+    const teachers = parseTeachers(input.teachersCsv, errors); const subjects = [...parseSubjects(1, input.grade1SubjectsCsv, errors), ...parseSubjects(2, input.grade2SubjectsCsv, errors), ...parseSubjects(3, input.grade3SubjectsCsv, errors)]; const students = parseStudents(input.newStudentsCsv, this.clock(), errors);
     const duplicate = (values: string[], file: string, field: string) => { const seen = new Set<string>(); for (const value of values) { if (seen.has(value)) errors.push({ file, row: 0, field, reason: "重複しています。" }); seen.add(value); } };
     duplicate(teachers.map((row) => row.email), "講師CSV", "メールアドレス"); duplicate(students.map((row) => row.studentNumber), "新入生CSV", "学籍番号"); duplicate(subjects.map((row) => `${row.gradeLevel}:${row.name}`), "科目CSV", "科目名");
     return { teachers, subjects, students, errors };

@@ -22,7 +22,7 @@ const csv = {
   students: "学籍番号,氏名,ひらがな,年齢,生年月日,性別,メール,電話,郵便番号,住所,専攻\r\nD27-001,新入生,しんにゅうせい,19,2008-04-01,女,new@example.test,090,100-0001,東京都,システムエンジニア\r\n",
 };
 const input = (key = "rollover-2027") => ({ targetYear: 2027, idempotencyKey: key, teachersCsv: csv.teachers, grade1SubjectsCsv: csv.grade1, grade2SubjectsCsv: csv.grade2, grade3SubjectsCsv: csv.grade3, newStudentsCsv: csv.students });
-const setup = () => { const database = new Database(":memory:"); database.exec(`
+const setup = (clock: () => Date = () => new Date()) => { const database = new Database(":memory:"); database.exec(`
   PRAGMA foreign_keys=ON;
   CREATE TABLE user (id text primary key,name text not null,email text not null unique,role text not null,status text not null,must_change_password integer not null,created_at integer,updated_at integer);
   CREATE TABLE academic_years (year integer primary key,is_current integer not null,selected_by_user_id text references user(id),selected_at integer,created_at integer,updated_at integer);
@@ -34,7 +34,7 @@ const setup = () => { const database = new Database(":memory:"); database.exec(`
   CREATE TABLE idempotency_operations (id text primary key,operation_type text,idempotency_key text unique,status text,academic_year integer references academic_years(year),payload_hash text,result_json text,created_by_user_id text references user(id),completed_at integer,created_at integer,updated_at integer); CREATE UNIQUE INDEX idempotency_operations_rollover_success_year_unique ON idempotency_operations(academic_year) WHERE operation_type='annual_rollover' AND status='succeeded';
   CREATE TABLE audit_logs (id text primary key,actor_user_id text references user(id),action text,entity_type text,entity_id text,academic_year integer references academic_years(year),payload_json text);
   INSERT INTO user VALUES ('admin','職員','admin@example.test','admin','active',0,0,0),('teacher','旧名','teacher@example.test','teacher','active',0,0,0); INSERT INTO academic_years VALUES (2023,0,'admin',0,0,0),(2026,1,'admin',0,0,0); INSERT INTO students VALUES ('old','OLD-1','卒業候補','そつぎょう','2005-04-01','男',NULL,NULL,NULL,NULL,'system-engineer',2023,'enrolled',NULL,0,NULL,0,0,0);
-`); let id = 0; const adapter = d1(database); return { database, service: new D1RolloverService(adapter.database, () => `id-${++id}`), lastBatchStatementCount: adapter.lastBatchStatementCount, setBeforeBatch: adapter.setBeforeBatch }; };
+`); let id = 0; const adapter = d1(database); return { database, service: new D1RolloverService(adapter.database, () => `id-${++id}`, clock), lastBatchStatementCount: adapter.lastBatchStatementCount, setBeforeBatch: adapter.setBeforeBatch }; };
 
 describe("annual rollover", () => {
   it("parses BOM, CRLF, and RFC4180 quotes while rejecting malformed headers", () => {
@@ -55,6 +55,43 @@ describe("annual rollover", () => {
     expect(reordered.errors).toContainEqual(expect.objectContaining({ file: "講師CSV", row: 1, field: "見出し" }));
     const unknown = await service.preview({ ...input(), newStudentsCsv: ordinaryImportHeaders.students.replace("電話番号", "電話連絡先") });
     expect(unknown.errors).toContainEqual(expect.objectContaining({ file: "新入生CSV", row: 1, field: "見出し" }));
+  });
+  it("accepts independent ages and normalizes ordinary-import Japanese birth dates before persistence", async () => {
+    const { database, service } = setup();
+    const students = csv.students.replace(",19,2008-04-01,", ",42,2008年4月1日,");
+    expect((await service.preview({ ...input(), newStudentsCsv: students })).errors).toEqual([]);
+    await service.apply("admin", { ...input(), newStudentsCsv: students });
+    expect(database.query("SELECT birth_date FROM students WHERE student_number='D27-001'").get()).toEqual({ birth_date: "2008-04-01" });
+  });
+  it("keeps age required after removing the age and birth-date equality check", async () => {
+    for (const age of ["", "   "]) {
+      const { database, service } = setup();
+      const preview = await service.preview({ ...input(), newStudentsCsv: csv.students.replace(",19,2008-04-01,", `,${age},2008-04-01,`) });
+      expect(preview.errors).toContainEqual(expect.objectContaining({ file: "新入生CSV", row: 2, field: "入力値" }));
+      expect(preview).not.toHaveProperty("token");
+      expect(database.query("SELECT count(*) AS count FROM subjects").get()).toEqual({ count: 0 });
+      expect(database.query("SELECT year FROM academic_years WHERE is_current=1").get()).toEqual({ year: 2026 });
+    }
+  });
+  it("rejects malformed, impossible, and future birth dates while accepting a valid leap date", async () => {
+    const invalidDates = ["2008/04/01", "2007-02-29", "2008年4月31日"];
+    for (const date of invalidDates) {
+      const { database, service } = setup();
+      const preview = await service.preview({ ...input(), newStudentsCsv: csv.students.replace("2008-04-01", date) });
+      expect(preview.errors).toContainEqual(expect.objectContaining({ file: "新入生CSV", row: 2, field: "生年月日" }));
+      expect(preview).not.toHaveProperty("token");
+      expect(database.query("SELECT count(*) AS count FROM subjects").get()).toEqual({ count: 0 });
+      expect(database.query("SELECT year FROM academic_years WHERE is_current=1").get()).toEqual({ year: 2026 });
+    }
+    const { service } = setup();
+    expect((await service.preview({ ...input(), newStudentsCsv: csv.students.replace("2008-04-01", "2008-02-29") })).errors).toEqual([]);
+  });
+  it("uses the Japan calendar date when rejecting future birth dates", async () => {
+    const beforeMidnight = setup(() => new Date("2026-09-07T14:59:59.000Z"));
+    const tomorrow = csv.students.replace("2008-04-01", "2026-09-08");
+    expect((await beforeMidnight.service.preview({ ...input(), newStudentsCsv: tomorrow })).errors).toContainEqual(expect.objectContaining({ file: "新入生CSV", row: 2, field: "生年月日" }));
+    const afterMidnight = setup(() => new Date("2026-09-07T15:00:00.000Z"));
+    expect((await afterMidnight.service.preview({ ...input(), newStudentsCsv: tomorrow })).errors).toEqual([]);
   });
   it("previews without mutation and reports invalid values", async () => {
     const { database, service } = setup(); const preview = await service.preview(input()); expect(preview.errors).toEqual([]); expect(preview.graduationCandidates).toBe(1); expect(preview.subjectCounts).toEqual({ 1: 1, 2: 0, 3: 0 }); expect(database.query("SELECT count(*) AS count FROM subjects").get()).toEqual({ count: 0 });
